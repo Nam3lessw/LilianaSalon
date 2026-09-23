@@ -1,8 +1,9 @@
 "use client";
 import React, { useState, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
+import { useCountry, CountryCode } from "@/context/CountryContext";
 import { db } from "@/lib/firebase";
-import { collection, query, where, getDocs } from "firebase/firestore";
+import { collection, query, where, getDocs, doc, updateDoc } from "firebase/firestore";
 import { 
   X, 
   Gift, 
@@ -19,7 +20,8 @@ import {
   Clock,
   Printer,
   ChevronRight,
-  Loader2
+  Loader2,
+  Globe
 } from "lucide-react";
 import Link from "next/link";
 
@@ -53,13 +55,35 @@ export default function CustomerRewardsModal() {
     isAdmin, 
     customerDrawerOpen, 
     setCustomerDrawerOpen, 
-    logout 
+    logout,
+    refreshProfile
   } = useAuth();
+
+  const { country, setCountry } = useCountry();
+  const [countryUpdatedNotice, setCountryUpdatedNotice] = useState(false);
 
   const [activeTab, setActiveTab] = useState<"rewards" | "orders">(isAdmin ? "orders" : "rewards");
   const [copied, setCopied] = useState(false);
   const [orders, setOrders] = useState<UserOrder[]>([]);
   const [loadingOrders, setLoadingOrders] = useState(false);
+
+  const handleUpdateCountry = async (newCountry: CountryCode) => {
+    if (country === newCountry) return;
+    setCountry(newCountry);
+    setCountryUpdatedNotice(true);
+    setTimeout(() => setCountryUpdatedNotice(false), 2500);
+
+    if (user && db) {
+      try {
+        await updateDoc(doc(db, "users", user.uid), {
+          country: newCountry
+        });
+        await refreshProfile();
+      } catch (e) {
+        console.error("Error saving country preference to Firestore", e);
+      }
+    }
+  };
 
   useEffect(() => {
     if (isAdmin) {
@@ -178,6 +202,49 @@ export default function CustomerRewardsModal() {
               </Link>
             </div>
           )}
+          {/* Opción para cambiar País de Entrega & Moneda */}
+          <div className="mt-3.5 pt-3.5 border-t border-stone-200/60">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-stone-600 flex items-center gap-1.5">
+                <Globe size={13} className="text-[#C08261]" /> País de Entrega & Moneda
+              </span>
+              <span className="text-[10px] text-stone-500 font-medium">
+                {country === "GT" ? "Quetzales (Q)" : "Dólares ($)"}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => handleUpdateCountry("GT")}
+                className={`py-2 px-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 border transition ${
+                  country === "GT"
+                    ? "bg-white border-[#C08261] text-black ring-1 ring-[#C08261] shadow-xs"
+                    : "bg-white/50 border-stone-200 text-stone-600 hover:bg-white"
+                }`}
+              >
+                <span>🇬🇹 Guatemala (Q)</span>
+                {country === "GT" && <Check size={13} className="text-[#C08261]" />}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleUpdateCountry("SV")}
+                className={`py-2 px-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 border transition ${
+                  country === "SV"
+                    ? "bg-white border-[#C08261] text-black ring-1 ring-[#C08261] shadow-xs"
+                    : "bg-white/50 border-stone-200 text-stone-600 hover:bg-white"
+                }`}
+              >
+                <span>🇸🇻 El Salvador ($)</span>
+                {country === "SV" && <Check size={13} className="text-[#C08261]" />}
+              </button>
+            </div>
+            {countryUpdatedNotice && (
+              <p className="text-[10px] text-emerald-700 font-medium mt-1 text-center animate-in fade-in">
+                ✓ País y precios actualizados
+              </p>
+            )}
+          </div>
 
           {/* Selector de Pestañas: Solo para clientes normales */}
           {!isAdmin ? (

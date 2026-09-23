@@ -22,6 +22,7 @@ export interface UserProfile {
   points: number;
   welcomeCoupon: string;
   firstPurchaseUsed: boolean;
+  country?: "GT" | "SV";
   createdAt?: any;
 }
 

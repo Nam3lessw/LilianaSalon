@@ -1,13 +1,14 @@
 "use client";
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
+import { useCountry, CountryCode } from "@/context/CountryContext";
 import { 
   signInWithEmailAndPassword, 
   createUserWithEmailAndPassword, 
   updateProfile 
 } from "firebase/auth";
 import { auth, db } from "@/lib/firebase";
-import { doc, setDoc, serverTimestamp } from "firebase/firestore";
+import { doc, setDoc, getDoc, serverTimestamp } from "firebase/firestore";
 import { X, Sparkles, Gift, Check, ShieldCheck } from "lucide-react";
 
 export default function CustomerAuthModal() {
@@ -19,12 +20,21 @@ export default function CustomerAuthModal() {
     refreshProfile 
   } = useAuth();
 
+  const { country, setCountry } = useCountry();
+  const [selectedCountry, setSelectedCountry] = useState<CountryCode>("GT");
+
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
+
+  useEffect(() => {
+    if (country) {
+      setSelectedCountry(country);
+    }
+  }, [country, authModalOpen]);
 
   if (!authModalOpen) return null;
 
@@ -56,6 +66,7 @@ export default function CustomerAuthModal() {
             name: name.trim() || email.split("@")[0],
             email: email.trim(),
             role: isPotentialAdmin ? "admin" : "customer",
+            country: selectedCountry,
             points: isPotentialAdmin ? 0 : 50, // 50 puntos para clientes, 0 para admin
             welcomeCoupon: isPotentialAdmin ? null : "BIENVENIDA15",
             firstPurchaseUsed: isPotentialAdmin ? true : false,
@@ -63,10 +74,12 @@ export default function CustomerAuthModal() {
           });
         }
 
+        setCountry(selectedCountry);
+
         setSuccessMsg(
           (email.toLowerCase().includes("admin") || email.toLowerCase().includes("liliana"))
             ? "¡Cuenta de Administrador creada exitosamente!"
-            : "¡Felicidades! Tu cuenta fue creada. Recibiste tu cupón de 15% OFF y 50 Puntos."
+            : `¡Felicidades! Tu cuenta fue creada en ${selectedCountry === "GT" ? "Guatemala (Q)" : "El Salvador ($)"}. Recibiste tu cupón de 15% OFF y 50 Puntos.`
         );
         await refreshProfile();
         setTimeout(() => {
@@ -74,7 +87,16 @@ export default function CustomerAuthModal() {
         }, 1500);
       } else {
         // Login existing user
-        await signInWithEmailAndPassword(auth, email, password);
+        const userCred = await signInWithEmailAndPassword(auth, email, password);
+        if (db && userCred.user?.uid) {
+          const uDoc = await getDoc(doc(db, "users", userCred.user.uid));
+          if (uDoc.exists()) {
+            const data = uDoc.data();
+            if (data.country === "GT" || data.country === "SV") {
+              setCountry(data.country);
+            }
+          }
+        }
         await refreshProfile();
         closeAuthModal();
       }
@@ -175,19 +197,60 @@ export default function CustomerAuthModal() {
           )}
 
           {isRegister && (
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">
-                Tu Nombre
-              </label>
-              <input
-                required
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Ej. María López"
-                className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-black"
-              />
-            </div>
+            <>
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">
+                  Tu Nombre
+                </label>
+                <input
+                  required
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Ej. María López"
+                  className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-black"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1.5">
+                  País de Envío & Moneda
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedCountry("GT")}
+                    className={`p-2.5 rounded-xl border text-left transition flex items-center gap-2.5 ${
+                      selectedCountry === "GT"
+                        ? "border-[#C08261] bg-[#FAF3EC] text-black font-semibold ring-1 ring-[#C08261] shadow-xs"
+                        : "border-stone-200 hover:border-stone-300 text-stone-600 bg-white"
+                    }`}
+                  >
+                    <span className="text-xl">🇬🇹</span>
+                    <div>
+                      <span className="text-xs block font-bold leading-tight">Guatemala</span>
+                      <span className="text-[10px] text-stone-500 block">Quetzales (Q)</span>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setSelectedCountry("SV")}
+                    className={`p-2.5 rounded-xl border text-left transition flex items-center gap-2.5 ${
+                      selectedCountry === "SV"
+                        ? "border-[#C08261] bg-[#FAF3EC] text-black font-semibold ring-1 ring-[#C08261] shadow-xs"
+                        : "border-stone-200 hover:border-stone-300 text-stone-600 bg-white"
+                    }`}
+                  >
+                    <span className="text-xl">🇸🇻</span>
+                    <div>
+                      <span className="text-xs block font-bold leading-tight">El Salvador</span>
+                      <span className="text-[10px] text-stone-500 block">Dólares ($)</span>
+                    </div>
+                  </button>
+                </div>
+              </div>
+            </>
           )}
 
           <div>

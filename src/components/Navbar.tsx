@@ -1,10 +1,9 @@
 "use client";
 import Link from "next/link";
-import { User, Gift, Award, Lock, Sparkles, Globe, ChevronDown, ShoppingBag } from "lucide-react";
+import { User, Gift, Award, Lock, Sparkles, ShoppingBag } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useCountry } from "@/context/CountryContext";
 import { useCart } from "@/context/CartContext";
-import { useState } from "react";
 
 export default function Navbar() {
   const { 
@@ -15,15 +14,14 @@ export default function Navbar() {
     setCustomerDrawerOpen 
   } = useAuth();
 
-  const { country, setCountry, countryFlag, currencySymbol } = useCountry();
+  const { country, currencySymbol } = useCountry();
   const { setIsCartOpen, totalItems } = useCart();
-  const [countryMenuOpen, setCountryMenuOpen] = useState(false);
 
   return (
     <header className="w-full sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-stone-200">
-      {/* Top Banner de Oferta y Selector de País */}
-      <div className="bg-[#FAF3EC] text-stone-800 text-[11px] sm:text-xs py-2 px-3 sm:px-6 border-b border-stone-200/60 flex items-center justify-between font-medium">
-        <div className="flex items-center gap-1.5 mx-auto sm:mx-0">
+      {/* Top Banner de Oferta */}
+      <div className="bg-[#FAF3EC] text-stone-800 text-[11px] sm:text-xs py-2 px-3 sm:px-6 border-b border-stone-200/60 flex items-center justify-center font-medium overflow-hidden">
+        <div className="flex items-center gap-1.5 text-center truncate">
           <Sparkles size={12} className="text-[#C08261] flex-shrink-0" />
           <span className="truncate">
             Envíos en <strong className="font-semibold text-black">Guatemala 🇬🇹 & El Salvador 🇸🇻</strong> {!isAdmin && "• -15% en tu 1ra compra"}
@@ -31,57 +29,10 @@ export default function Navbar() {
           {!user && (
             <button
               onClick={() => openAuthModal("register")}
-              className="hidden sm:inline underline text-black font-bold hover:text-[#C08261] transition ml-1"
+              className="hidden sm:inline underline text-black font-bold hover:text-[#C08261] transition ml-1 whitespace-nowrap"
             >
               Crear Cuenta
             </button>
-          )}
-        </div>
-
-        {/* Selector de País / Moneda */}
-        <div className="relative">
-          <button
-            onClick={() => setCountryMenuOpen(!countryMenuOpen)}
-            className="flex items-center gap-1.5 bg-white/80 hover:bg-white text-stone-700 px-2.5 py-1 rounded-full border border-stone-200 shadow-xs text-xs font-semibold transition"
-          >
-            <span>{countryFlag}</span>
-            <span>{country === "GT" ? "GT (Q)" : "SV ($)"}</span>
-            <ChevronDown size={12} className="text-stone-400" />
-          </button>
-
-          {countryMenuOpen && (
-            <div 
-              className="absolute right-0 top-full mt-1.5 bg-white border border-stone-200 rounded-xl shadow-xl py-1.5 z-50 w-44 animate-in fade-in zoom-in-95 duration-150"
-              onMouseLeave={() => setCountryMenuOpen(false)}
-            >
-              <div className="px-3 py-1 text-[10px] uppercase tracking-wider text-stone-400 font-bold border-b border-stone-100">
-                Selecciona tu país
-              </div>
-              <button
-                onClick={() => {
-                  setCountry("GT");
-                  setCountryMenuOpen(false);
-                }}
-                className={`w-full px-3 py-2 text-left text-xs flex items-center justify-between hover:bg-stone-50 transition ${
-                  country === "GT" ? "font-bold text-[#C08261] bg-[#FAF3EC]/50" : "text-stone-700"
-                }`}
-              >
-                <span className="flex items-center gap-2">🇬🇹 Guatemala</span>
-                <span className="text-stone-400 text-[11px]">Quetzal (Q)</span>
-              </button>
-              <button
-                onClick={() => {
-                  setCountry("SV");
-                  setCountryMenuOpen(false);
-                }}
-                className={`w-full px-3 py-2 text-left text-xs flex items-center justify-between hover:bg-stone-50 transition ${
-                  country === "SV" ? "font-bold text-[#C08261] bg-[#FAF3EC]/50" : "text-stone-700"
-                }`}
-              >
-                <span className="flex items-center gap-2">🇸🇻 El Salvador</span>
-                <span className="text-stone-400 text-[11px]">Dólar ($)</span>
-              </button>
-            </div>
           )}
         </div>
       </div>

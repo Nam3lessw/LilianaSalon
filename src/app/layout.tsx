@@ -23,13 +23,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="es">
-      <body className={`${inter.className} min-h-screen bg-[#FFFDFB] text-gray-900 flex flex-col antialiased`}>
+    <html lang="es" className="overflow-x-hidden max-w-full">
+      <body className={`${inter.className} min-h-screen bg-[#FFFDFB] text-gray-900 flex flex-col antialiased overflow-x-hidden max-w-full w-full`}>
         <AuthProvider>
           <CountryProvider>
             <CartProvider>
               <Navbar />
-              <main className="flex-grow">
+              <main className="flex-grow overflow-x-hidden w-full max-w-full">
                 {children}
               </main>
               <WhatsAppButton />

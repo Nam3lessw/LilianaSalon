@@ -43,7 +43,7 @@ export default function CartDrawer() {
     getItemUnitPrice
   } = useCart();
 
-  const { country, countryName } = useCountry();
+  const { country, countryName, setCountry } = useCountry();
   const { user, userProfile, isAdmin, openAuthModal } = useAuth();
   const router = useRouter();
 
@@ -358,6 +358,37 @@ export default function CartDrawer() {
                   </div>
                 ) : null
               )}
+
+              {/* País de Destino & Moneda */}
+              <div className="pt-2 border-t border-stone-100 space-y-1.5">
+                <span className="text-[10px] uppercase tracking-wider font-bold text-stone-400 block">
+                  País de destino / Moneda
+                </span>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setCountry("GT")}
+                    className={`py-2 px-2.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 border transition ${
+                      country === "GT"
+                        ? "bg-[#FAF3EC] border-[#C08261] text-black font-bold ring-1 ring-[#C08261] shadow-2xs"
+                        : "bg-white border-stone-200 text-stone-600 hover:bg-stone-50"
+                    }`}
+                  >
+                    <span>🇬🇹 Guatemala (Q)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCountry("SV")}
+                    className={`py-2 px-2.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 border transition ${
+                      country === "SV"
+                        ? "bg-[#FAF3EC] border-[#C08261] text-black font-bold ring-1 ring-[#C08261] shadow-2xs"
+                        : "bg-white border-stone-200 text-stone-600 hover:bg-stone-50"
+                    }`}
+                  >
+                    <span>🇸🇻 El Salvador ($)</span>
+                  </button>
+                </div>
+              </div>
 
               {/* Información del Cliente */}
               <div className="pt-2 border-t border-stone-100 space-y-2">
