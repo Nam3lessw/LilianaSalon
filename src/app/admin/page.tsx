@@ -32,7 +32,19 @@ import {
   Coins,
   Sparkles,
   Gift,
-  ArrowRightLeft
+  ArrowRightLeft,
+  Receipt,
+  FileText,
+  Printer,
+  Send,
+  ShoppingBag,
+  RotateCcw,
+  Check,
+  AlertCircle,
+  Phone,
+  X,
+  Search,
+  ShieldCheck
 } from "lucide-react";
 import Link from "next/link";
 import { convertGTQtoUSD, convertUSDtoGTQ, roundToCommercialPrice, DEFAULT_EXCHANGE_RATE } from "@/lib/currency";
@@ -69,14 +81,59 @@ export interface CustomerUser {
   role: string;
   points: number;
   welcomeCoupon?: string;
+  firstPurchaseUsed?: boolean;
   createdAt?: any;
+}
+
+export interface OrderReceipt {
+  id: string;
+  orderNumber: string;
+  customerId: string;
+  customerName: string;
+  customerEmail: string;
+  customerPhone?: string;
+  items: {
+    productId: string;
+    productName: string;
+    brand: string;
+    volume?: string;
+    quantity: number;
+    unitPrice: number;
+    totalPrice: number;
+  }[];
+  currency: "GTQ" | "USD";
+  subtotal: number;
+  discount: number;
+  couponApplied: boolean;
+  couponCode?: string;
+  total: number;
+  paymentMethod: string;
+  pointsEarned: number;
+  notes?: string;
+  createdAt: any;
 }
 
 export default function AdminDashboard() {
   const router = useRouter();
 
   // Navigation tab in Admin
-  const [activeTab, setActiveTab] = useState<"products" | "loyalty">("products");
+  const [activeTab, setActiveTab] = useState<"products" | "orders" | "loyalty">("products");
+
+  // Orders & Receipts state
+  const [orders, setOrders] = useState<OrderReceipt[]>([]);
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string>("");
+  const [manualCustomerName, setManualCustomerName] = useState<string>("");
+  const [manualCustomerEmail, setManualCustomerEmail] = useState<string>("");
+  const [manualCustomerPhone, setManualCustomerPhone] = useState<string>("");
+  const [orderCurrency, setOrderCurrency] = useState<"GTQ" | "USD">("GTQ");
+  const [selectedProductId, setSelectedProductId] = useState<string>("");
+  const [orderQuantity, setOrderQuantity] = useState<number>(1);
+  const [applyWelcomeCoupon, setApplyWelcomeCoupon] = useState<boolean>(true);
+  const [paymentMethod, setPaymentMethod] = useState<string>("Transferencia / Depósito");
+  const [orderNotes, setOrderNotes] = useState<string>("");
+  const [generatingReceipt, setGeneratingReceipt] = useState<boolean>(false);
+  const [activeReceipt, setActiveReceipt] = useState<OrderReceipt | null>(null);
+  const [receiptFilter, setReceiptFilter] = useState<string>("");
 
   // Auth and loading states
   const [authChecking, setAuthChecking] = useState(true);
@@ -182,11 +239,13 @@ export default function AdminDashboard() {
           setAuthChecking(false);
           fetchProducts();
           fetchLoyaltyData();
+          fetchOrders();
         } else if (hasAdminSession) {
           // Mantener abierta la sesión del admin guardada en localStorage
           setAuthChecking(false);
           fetchProducts();
           fetchLoyaltyData();
+          fetchOrders();
         } else {
           router.push("/admin/login");
         }
@@ -196,6 +255,7 @@ export default function AdminDashboard() {
       if (hasAdminSession) {
         setAuthChecking(false);
         fetchProducts();
+        fetchOrders();
       } else {
         router.push("/admin/login");
       }
@@ -236,6 +296,189 @@ export default function AdminDashboard() {
       setCustomers(userList.filter(u => u.role !== "admin"));
     } catch (err) {
       console.error("Error fetching loyalty data", err);
+    }
+  };
+
+  const fetchOrders = async () => {
+    if (!db) return;
+    try {
+      const ordersSnap = await getDocs(collection(db, "orders"));
+      const list = ordersSnap.docs.map(d => ({ id: d.id, ...d.data() } as OrderReceipt));
+      list.sort((a, b) => {
+        const timeA = a.createdAt?.seconds || (typeof a.createdAt === "string" ? new Date(a.createdAt).getTime() : 0);
+        const timeB = b.createdAt?.seconds || (typeof b.createdAt === "string" ? new Date(b.createdAt).getTime() : 0);
+        return timeB - timeA;
+      });
+      setOrders(list);
+    } catch (err) {
+      console.error("Error fetching orders", err);
+    }
+  };
+
+  const handleToggleCoupon = async (customerId: string, currentUsed: boolean) => {
+    if (!db) return;
+    try {
+      await updateDoc(doc(db, "users", customerId), {
+        firstPurchaseUsed: !currentUsed,
+        updatedAt: serverTimestamp()
+      });
+      setCustomers(prev => prev.map(c => c.id === customerId ? { ...c, firstPurchaseUsed: !currentUsed } : c));
+      setStatusMessage({
+        type: "success",
+        text: `Estado del cupón 15% actualizado (${!currentUsed ? "Marcado como Canjeado" : "Reactivado como Disponible"}).`
+      });
+    } catch (err: any) {
+      console.error("Error toggling coupon", err);
+      setStatusMessage({ type: "error", text: "Error al cambiar estado del cupón: " + err.message });
+    }
+  };
+
+  const generateWhatsAppReceiptText = (r: OrderReceipt) => {
+    const symbol = r.currency === "GTQ" ? "Q" : "$";
+    const itemsText = r.items?.map(i => `• *${i.productName}*${i.volume ? ` (${i.volume})` : ""} x${i.quantity} — ${symbol}${i.totalPrice.toFixed(2)}`).join("\n") || "";
+    const couponText = r.couponApplied ? `\n🎉 *Descuento Bienvenida (15% en 1 producto):* -${symbol}${r.discount.toFixed(2)} (${r.couponCode || "BIENVENIDA15"})` : "";
+    
+    return encodeURIComponent(
+      `🧾 *RECIBO OFICIAL — LILIANA SALON*\n` +
+      `Recibo Nº: *#${r.orderNumber}*\n` +
+      `Cliente: *${r.customerName}* (${r.customerEmail})\n` +
+      `----------------------------------------\n` +
+      `${itemsText}\n` +
+      `----------------------------------------\n` +
+      `Subtotal: ${symbol}${r.subtotal.toFixed(2)}${couponText}\n` +
+      `*TOTAL COBRADO:* *${symbol}${r.total.toFixed(2)} ${r.currency}*\n` +
+      `Método de pago: ${r.paymentMethod}\n` +
+      `⭐ *Puntos acumulados con esta compra:* +${r.pointsEarned} pts\n` +
+      `----------------------------------------\n` +
+      `¡Muchísimas gracias por consentir tu cabello con nosotros! ✨\n` +
+      `_Liliana Salon • Cuidado Capilar Profesional (Guatemala 🇬🇹 / El Salvador 🇸🇻)_`
+    );
+  };
+
+  const handleCreateOrder = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedProductId) {
+      setStatusMessage({ type: "error", text: "Por favor selecciona un producto para emitir el recibo." });
+      return;
+    }
+    const product = products.find(p => p.id === selectedProductId);
+    if (!product) return;
+
+    setGeneratingReceipt(true);
+    try {
+      const isRegistered = selectedCustomerId && selectedCustomerId !== "manual";
+      const customer = isRegistered ? customers.find(c => c.id === selectedCustomerId) : null;
+      
+      const cName = customer?.name || manualCustomerName.trim() || "Cliente";
+      const cEmail = customer?.email || manualCustomerEmail.trim() || "cliente@lilianasalon.com";
+      const cPhone = manualCustomerPhone.trim() || "";
+
+      const unitPrice = orderCurrency === "GTQ" 
+        ? product.price 
+        : (product.priceUSD || convertGTQtoUSD(product.price));
+      
+      const subtotal = unitPrice * orderQuantity;
+      // Regla: El 15% aplica solo a 1 producto y solo 1 vez
+      const canUseCoupon = Boolean(isRegistered && !customer?.firstPurchaseUsed && applyWelcomeCoupon);
+      const discount = canUseCoupon ? roundToCommercialPrice(unitPrice * 0.15) : 0;
+      const total = Math.max(0, subtotal - discount);
+
+      const pointsEarned = orderCurrency === "GTQ" 
+        ? Math.floor(total / 10) 
+        : Math.floor(total / 1.25);
+
+      const orderNumber = `LS-${Date.now().toString().slice(-6)}`;
+
+      const newReceipt: OrderReceipt = {
+        id: "",
+        orderNumber,
+        customerId: customer?.id || "manual",
+        customerName: cName,
+        customerEmail: cEmail,
+        customerPhone: cPhone,
+        items: [
+          {
+            productId: product.id,
+            productName: product.name,
+            brand: product.brand || product.category,
+            volume: product.volume,
+            quantity: orderQuantity,
+            unitPrice,
+            totalPrice: subtotal
+          }
+        ],
+        currency: orderCurrency,
+        subtotal,
+        discount,
+        couponApplied: canUseCoupon,
+        couponCode: canUseCoupon ? (customer?.welcomeCoupon || "BIENVENIDA15") : undefined,
+        total,
+        paymentMethod,
+        pointsEarned,
+        notes: orderNotes,
+        createdAt: new Date().toISOString()
+      };
+
+      if (db) {
+        // 1. Guardar orden en colección "orders"
+        const docRef = await addDoc(collection(db, "orders"), {
+          ...newReceipt,
+          createdAt: serverTimestamp()
+        });
+        newReceipt.id = docRef.id;
+
+        // 2. Si el cliente está registrado: quemar cupón y sumar puntos
+        if (customer && customer.id) {
+          const userRef = doc(db, "users", customer.id);
+          const updates: any = {
+            points: (customer.points || 0) + pointsEarned,
+            updatedAt: serverTimestamp()
+          };
+          if (canUseCoupon) {
+            updates.firstPurchaseUsed = true;
+          }
+          await updateDoc(userRef, updates);
+
+          // Actualizar estado local de customers
+          setCustomers(prev => prev.map(c => {
+            if (c.id === customer.id) {
+              return {
+                ...c,
+                points: (c.points || 0) + pointsEarned,
+                firstPurchaseUsed: canUseCoupon ? true : c.firstPurchaseUsed
+              };
+            }
+            return c;
+          }));
+        }
+
+        // 3. Descontar stock
+        if (product.stock > 0) {
+          const newStock = Math.max(0, product.stock - orderQuantity);
+          await updateDoc(doc(db, "products", product.id), {
+            stock: newStock,
+            updatedAt: serverTimestamp()
+          });
+          setProducts(prev => prev.map(p => p.id === product.id ? { ...p, stock: newStock } : p));
+        }
+      }
+
+      setOrders(prev => [newReceipt, ...prev]);
+      setActiveReceipt(newReceipt);
+      setStatusMessage({ 
+        type: "success", 
+        text: `¡Recibo #${orderNumber} emitido exitosamente! ${canUseCoupon ? "El cupón del 15% ha sido quemado/marcado como canjeado." : ""}` 
+      });
+
+      // Limpiar formulario
+      setSelectedProductId("");
+      setOrderQuantity(1);
+      setOrderNotes("");
+    } catch (err: any) {
+      console.error(err);
+      setStatusMessage({ type: "error", text: "Error al emitir recibo: " + err.message });
+    } finally {
+      setGeneratingReceipt(false);
     }
   };
 
@@ -476,6 +719,7 @@ export default function AdminDashboard() {
               onClick={() => {
                 fetchProducts();
                 fetchLoyaltyData();
+                fetchOrders();
               }}
               className="text-xs text-gray-600 hover:text-black flex items-center gap-1 p-2 rounded-lg hover:bg-stone-100 transition"
               title="Refrescar datos"
@@ -492,10 +736,10 @@ export default function AdminDashboard() {
         </div>
 
         {/* Pestañas de Navegación del Admin */}
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex gap-8 border-t border-stone-100 text-xs font-semibold uppercase tracking-wider">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex gap-6 sm:gap-8 border-t border-stone-100 text-xs font-semibold uppercase tracking-wider overflow-x-auto">
           <button
             onClick={() => setActiveTab("products")}
-            className={`py-3 flex items-center gap-2 border-b-2 transition ${
+            className={`py-3 flex items-center gap-2 border-b-2 transition whitespace-nowrap ${
               activeTab === "products" 
                 ? "border-black text-black font-bold" 
                 : "border-transparent text-stone-400 hover:text-stone-700"
@@ -504,8 +748,18 @@ export default function AdminDashboard() {
             <Package size={15} /> Productos & Inventario ({products.length})
           </button>
           <button
+            onClick={() => setActiveTab("orders")}
+            className={`py-3 flex items-center gap-2 border-b-2 transition whitespace-nowrap ${
+              activeTab === "orders" 
+                ? "border-black text-black font-bold" 
+                : "border-transparent text-stone-400 hover:text-stone-700"
+            }`}
+          >
+            <Receipt size={15} className="text-[#C08261]" /> Pedidos & Recibos ({orders.length})
+          </button>
+          <button
             onClick={() => setActiveTab("loyalty")}
-            className={`py-3 flex items-center gap-2 border-b-2 transition ${
+            className={`py-3 flex items-center gap-2 border-b-2 transition whitespace-nowrap ${
               activeTab === "loyalty" 
                 ? "border-black text-black font-bold" 
                 : "border-transparent text-stone-400 hover:text-stone-700"
@@ -968,7 +1222,409 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* TAB 2: PUNTOS Y FIDELIZACIÓN */}
+        {/* TAB 2: PEDIDOS Y GENERADOR DE RECIBOS */}
+        {activeTab === "orders" && (
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+            {/* Formulario para emitir nuevo recibo / venta */}
+            <div className="bg-white p-6 sm:p-8 rounded-2xl shadow-sm border border-stone-200 lg:col-span-5">
+              <div className="flex items-center gap-2 mb-2">
+                <Receipt size={20} className="text-[#C08261]" />
+                <h2 className="text-lg font-serif font-medium">Emitir Recibo & Registrar Venta</h2>
+              </div>
+              <p className="text-xs text-gray-500 mb-6 border-b border-stone-100 pb-4">
+                Genera el recibo formal de compra, valida el cupón del 15% por correo y acredita los puntos al cliente.
+              </p>
+
+              <form onSubmit={handleCreateOrder} className="space-y-5">
+                {/* 1. Selección de Cliente */}
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1.5 flex items-center justify-between">
+                    <span>Cliente / Comprador *</span>
+                    <span className="text-[10px] text-stone-400 font-normal">Asocia el correo para el cupón</span>
+                  </label>
+                  <select
+                    value={selectedCustomerId}
+                    onChange={(e) => {
+                      const cid = e.target.value;
+                      setSelectedCustomerId(cid);
+                      if (cid && cid !== "manual") {
+                        const c = customers.find(item => item.id === cid);
+                        if (c) {
+                          setManualCustomerName(c.name || "");
+                          setManualCustomerEmail(c.email || "");
+                          // Si ya usó el cupón, no puede activarlo
+                          setApplyWelcomeCoupon(!c.firstPurchaseUsed);
+                        }
+                      }
+                    }}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-black bg-white"
+                  >
+                    <option value="">-- Selecciona un cliente registrado --</option>
+                    {customers.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name || "Cliente"} ({c.email}) {c.firstPurchaseUsed ? "• [Cupón 15% YA USADO]" : "• [15% DISPONIBLE ✨]"}
+                      </option>
+                    ))}
+                    <option value="manual">➕ Cliente sin registrar / Ocasional</option>
+                  </select>
+                </div>
+
+                {/* Si seleccionó cliente registrado: Tarjeta de Estado del Cupón */}
+                {selectedCustomerId && selectedCustomerId !== "manual" && (
+                  (() => {
+                    const c = customers.find(item => item.id === selectedCustomerId);
+                    if (!c) return null;
+                    const canUseCoupon = !c.firstPurchaseUsed;
+
+                    return (
+                      <div className={`p-3.5 rounded-xl border text-xs ${
+                        canUseCoupon 
+                          ? "bg-emerald-50/80 border-emerald-200 text-emerald-900" 
+                          : "bg-stone-50 border-stone-200 text-stone-700"
+                      }`}>
+                        <div className="flex items-center justify-between font-bold mb-1">
+                          <span className="flex items-center gap-1.5">
+                            {canUseCoupon ? <Gift size={14} className="text-emerald-600" /> : <AlertCircle size={14} className="text-stone-400" />}
+                            {canUseCoupon ? "Cupón 15% Disponible (BIENVENIDA15)" : "Cupón 15% No Disponible"}
+                          </span>
+                          <span className="bg-white/80 px-2 py-0.5 rounded-full border border-stone-200 font-bold text-[11px]">
+                            {c.points || 0} pts
+                          </span>
+                        </div>
+                        <p className="text-[11px] leading-relaxed text-stone-600">
+                          {canUseCoupon 
+                            ? `Autorizado para este correo (${c.email}). Se quemará y marcará como canjeado automáticamente al emitir este recibo.` 
+                            : `Este cliente ya utilizó su cupón del 15% en una compra previa. Solo aplica precio normal con acumulación de puntos.`}
+                        </p>
+                      </div>
+                    );
+                  })()
+                )}
+
+                {/* Campos manuales si seleccionó cliente sin registrar */}
+                {selectedCustomerId === "manual" && (
+                  <div className="space-y-3 p-3 bg-stone-50 rounded-xl border border-stone-200">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-stone-700 uppercase tracking-wider mb-1">Nombre</label>
+                      <input
+                        type="text"
+                        required
+                        value={manualCustomerName}
+                        onChange={(e) => setManualCustomerName(e.target.value)}
+                        placeholder="Nombre completo"
+                        className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-xs bg-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-stone-700 uppercase tracking-wider mb-1">Correo electrónico</label>
+                      <input
+                        type="email"
+                        value={manualCustomerEmail}
+                        onChange={(e) => setManualCustomerEmail(e.target.value)}
+                        placeholder="correo@ejemplo.com"
+                        className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-xs bg-white"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* 2. Moneda / País del Pedido */}
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1.5">
+                    Moneda de Facturación
+                  </label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setOrderCurrency("GTQ")}
+                      className={`py-2 px-3 rounded-lg border text-xs font-semibold flex items-center justify-center gap-1.5 transition ${
+                        orderCurrency === "GTQ"
+                          ? "bg-black text-white border-black"
+                          : "bg-white text-stone-700 border-stone-300 hover:border-stone-400"
+                      }`}
+                    >
+                      🇬🇹 Guatemala (Quetzales Q)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setOrderCurrency("USD")}
+                      className={`py-2 px-3 rounded-lg border text-xs font-semibold flex items-center justify-center gap-1.5 transition ${
+                        orderCurrency === "USD"
+                          ? "bg-black text-white border-black"
+                          : "bg-white text-stone-700 border-stone-300 hover:border-stone-400"
+                      }`}
+                    >
+                      🇸🇻 El Salvador ($ USD)
+                    </button>
+                  </div>
+                </div>
+
+                {/* 3. Selección de Producto y Cantidad */}
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1.5">
+                      Producto Vendido *
+                    </label>
+                    <select
+                      required
+                      value={selectedProductId}
+                      onChange={(e) => setSelectedProductId(e.target.value)}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-black bg-white"
+                    >
+                      <option value="">-- Seleccionar producto del catálogo --</option>
+                      {products.map((p) => {
+                        const pPrice = orderCurrency === "GTQ" ? `Q${p.price.toFixed(2)}` : `$${(p.priceUSD || convertGTQtoUSD(p.price)).toFixed(2)} USD`;
+                        return (
+                          <option key={p.id} value={p.id}>
+                            {p.name} {p.volume ? `(${p.volume})` : ""} — {pPrice} (Stock: {p.stock})
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1.5">
+                        Cantidad
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        required
+                        value={orderQuantity}
+                        onChange={(e) => setOrderQuantity(Math.max(1, parseInt(e.target.value) || 1))}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-black"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1.5">
+                        Teléfono WhatsApp
+                      </label>
+                      <input
+                        type="text"
+                        value={manualCustomerPhone}
+                        onChange={(e) => setManualCustomerPhone(e.target.value)}
+                        placeholder="Ej. 50242083721"
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-black"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* 4. Casilla de Cupón de Bienvenida 15% */}
+                {(() => {
+                  const c = selectedCustomerId && selectedCustomerId !== "manual" 
+                    ? customers.find(item => item.id === selectedCustomerId) 
+                    : null;
+                  const isCouponBlocked = c?.firstPurchaseUsed === true;
+
+                  return (
+                    <div className="pt-2 pb-2">
+                      <label className={`flex items-start gap-3 p-3.5 rounded-xl border transition ${
+                        isCouponBlocked 
+                          ? "bg-stone-50 border-stone-200 opacity-60 cursor-not-allowed" 
+                          : applyWelcomeCoupon 
+                          ? "bg-[#FAF3EC] border-[#C08261]/60 text-stone-900 cursor-pointer shadow-xs" 
+                          : "bg-white border-stone-200 text-stone-700 cursor-pointer"
+                      }`}>
+                        <input
+                          type="checkbox"
+                          disabled={isCouponBlocked}
+                          checked={applyWelcomeCoupon && !isCouponBlocked}
+                          onChange={(e) => setApplyWelcomeCoupon(e.target.checked)}
+                          className="mt-0.5 rounded text-[#C08261] focus:ring-[#C08261] w-4 h-4"
+                        />
+                        <div className="text-xs">
+                          <span className="font-bold block text-stone-900">
+                            Aplicar Descuento de Bienvenida 15% OFF (BIENVENIDA15)
+                          </span>
+                          <span className="text-[11px] text-stone-500 block mt-0.5">
+                            {isCouponBlocked 
+                              ? "⚠️ Este cliente ya canjeó su cupón de primera compra. No se puede reutilizar."
+                              : "*Aplica exclusivamente en 1 producto. Al emitir este recibo se marcará como canjeado en su cuenta."}
+                          </span>
+                        </div>
+                      </label>
+                    </div>
+                  );
+                })()}
+
+                {/* 5. Desglose de Cálculo en Tiempo Real */}
+                {selectedProductId && (
+                  (() => {
+                    const prod = products.find(p => p.id === selectedProductId);
+                    if (!prod) return null;
+                    const c = selectedCustomerId && selectedCustomerId !== "manual" 
+                      ? customers.find(item => item.id === selectedCustomerId) 
+                      : null;
+                    const canApply = applyWelcomeCoupon && (!c || !c.firstPurchaseUsed);
+
+                    const uPrice = orderCurrency === "GTQ" 
+                      ? prod.price 
+                      : (prod.priceUSD || convertGTQtoUSD(prod.price));
+                    
+                    const subtotal = uPrice * orderQuantity;
+                    // El 15% aplica solo a 1 unidad del producto por regla
+                    const discount = canApply ? roundToCommercialPrice(uPrice * 0.15) : 0;
+                    const finalTotal = Math.max(0, subtotal - discount);
+                    const pts = orderCurrency === "GTQ" ? Math.floor(finalTotal / 10) : Math.floor(finalTotal / 1.25);
+                    const symbol = orderCurrency === "GTQ" ? "Q" : "$";
+
+                    return (
+                      <div className="bg-stone-50 p-4 rounded-xl border border-stone-200 text-xs space-y-2">
+                        <div className="flex justify-between text-stone-600">
+                          <span>Subtotal ({orderQuantity}x {prod.name}):</span>
+                          <span className="font-semibold">{symbol}{subtotal.toFixed(2)}</span>
+                        </div>
+                        {discount > 0 && (
+                          <div className="flex justify-between text-emerald-700 font-semibold bg-emerald-100/60 p-1.5 rounded">
+                            <span className="flex items-center gap-1">
+                              <Gift size={12} /> Descuento 15% (1 unidad):
+                            </span>
+                            <span>-{symbol}{discount.toFixed(2)}</span>
+                          </div>
+                        )}
+                        <div className="flex justify-between text-stone-900 font-bold text-sm pt-2 border-t border-stone-200">
+                          <span>Total a Cobrar:</span>
+                          <span className="text-base text-gray-900">{symbol}{finalTotal.toFixed(2)} {orderCurrency}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-[11px] text-[#A8623D] font-medium pt-1">
+                          <span className="flex items-center gap-1"><Coins size={12} /> Puntos generados para el cliente:</span>
+                          <span className="font-bold">+{pts} pts</span>
+                        </div>
+                      </div>
+                    );
+                  })()
+                )}
+
+                {/* 6. Método de pago */}
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1.5">
+                    Método de Pago
+                  </label>
+                  <select
+                    value={paymentMethod}
+                    onChange={(e) => setPaymentMethod(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white"
+                  >
+                    <option value="Transferencia / Depósito">Transferencia / Depósito bancario</option>
+                    <option value="Pago Contra Entrega">Pago Contra Entrega (Efectivo)</option>
+                    <option value="Tarjeta de Crédito / Débito">Tarjeta de Crédito / Débito</option>
+                    <option value="Pago en Salón">Pago directo en Salón</option>
+                  </select>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={generatingReceipt || !selectedProductId}
+                  className="w-full bg-[#B85728] hover:bg-[#9E461D] text-white py-3.5 rounded-xl text-xs font-bold tracking-widest uppercase transition-all duration-200 hover:scale-[1.01] active:scale-[0.99] shadow-md flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  <Receipt size={16} />
+                  {generatingReceipt ? "Emitiendo Recibo..." : "GENERAR RECIBO OFICIAL & REGISTRAR VENTA"}
+                </button>
+              </form>
+            </div>
+
+            {/* Historial de Recibos Emitidos */}
+            <div className="bg-white p-6 sm:p-8 rounded-2xl shadow-sm border border-stone-200 lg:col-span-7">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-6 border-b border-stone-100 gap-3">
+                <div>
+                  <h2 className="text-lg font-serif font-medium flex items-center gap-2">
+                    <FileText size={18} className="text-[#C08261]" /> Recibos Emitidos ({orders.length})
+                  </h2>
+                  <p className="text-xs text-gray-500">Historial de órdenes, recibos y cupones canjeados</p>
+                </div>
+
+                {/* Buscador de recibos */}
+                <div className="relative">
+                  <Search size={14} className="absolute left-3 top-2.5 text-stone-400" />
+                  <input
+                    type="text"
+                    placeholder="Buscar cliente o recibo..."
+                    value={receiptFilter}
+                    onChange={(e) => setReceiptFilter(e.target.value)}
+                    className="pl-8 pr-3 py-1.5 border border-stone-200 rounded-lg text-xs w-full sm:w-48 focus:outline-none focus:ring-1 focus:ring-black"
+                  />
+                </div>
+              </div>
+
+              {orders.length === 0 ? (
+                <div className="py-20 text-center text-stone-400 text-sm">
+                  Aún no se han generado recibos de venta.
+                </div>
+              ) : (
+                <div className="overflow-x-auto mt-4">
+                  <table className="w-full text-left text-sm">
+                    <thead>
+                      <tr className="border-b border-stone-100 text-xs text-gray-400 uppercase tracking-wider">
+                        <th className="py-3 px-2">Recibo #</th>
+                        <th className="py-3 px-2">Cliente</th>
+                        <th className="py-3 px-2">Producto(s)</th>
+                        <th className="py-3 px-2">Total</th>
+                        <th className="py-3 px-2 text-center">15% Usado</th>
+                        <th className="py-3 px-2 text-right">Acción</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-stone-100">
+                      {orders
+                        .filter(o => {
+                          if (!receiptFilter.trim()) return true;
+                          const q = receiptFilter.toLowerCase();
+                          return o.orderNumber.toLowerCase().includes(q) || 
+                            o.customerName.toLowerCase().includes(q) || 
+                            o.customerEmail.toLowerCase().includes(q);
+                        })
+                        .map((order) => {
+                          const symbol = order.currency === "GTQ" ? "Q" : "$";
+                          return (
+                            <tr key={order.id || order.orderNumber} className="hover:bg-stone-50/70 transition">
+                              <td className="py-3 px-2 font-mono text-xs font-bold text-gray-900">
+                                #{order.orderNumber}
+                              </td>
+                              <td className="py-3 px-2 text-xs">
+                                <div className="font-semibold text-gray-900">{order.customerName}</div>
+                                <div className="text-[11px] text-stone-400">{order.customerEmail}</div>
+                              </td>
+                              <td className="py-3 px-2 text-xs text-stone-700">
+                                {order.items?.map((it, idx) => (
+                                  <div key={idx} className="truncate max-w-[150px]">
+                                    {it.productName} {it.volume && `(${it.volume})`} x{it.quantity}
+                                  </div>
+                                ))}
+                              </td>
+                              <td className="py-3 px-2 text-xs font-bold text-gray-900">
+                                {symbol}{order.total?.toFixed(2)}
+                              </td>
+                              <td className="py-3 px-2 text-center text-xs">
+                                {order.couponApplied ? (
+                                  <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                                    <Check size={10} /> 15% OFF
+                                  </span>
+                                ) : (
+                                  <span className="text-stone-300 text-xs">—</span>
+                                )}
+                              </td>
+                              <td className="py-3 px-2 text-right">
+                                <button
+                                  onClick={() => setActiveReceipt(order)}
+                                  className="text-xs bg-stone-100 hover:bg-black hover:text-white px-2.5 py-1.5 rounded-lg font-semibold transition inline-flex items-center gap-1 shadow-2xs"
+                                >
+                                  <Printer size={13} /> Ver Recibo
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* TAB 3: PUNTOS Y FIDELIZACIÓN */}
         {activeTab === "loyalty" && (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
             {/* Configuración de Puntos */}
@@ -1083,6 +1739,7 @@ export default function AdminDashboard() {
                       <tr className="border-b border-stone-100 text-xs text-gray-400 uppercase tracking-wider">
                         <th className="py-3 px-2">Cliente</th>
                         <th className="py-3 px-2">Correo</th>
+                        <th className="py-3 px-2 text-center">Cupón 15%</th>
                         <th className="py-3 px-2 text-center">Puntos Actuales</th>
                         <th className="py-3 px-2 text-right">Sumar / Restar Puntos</th>
                       </tr>
@@ -1095,6 +1752,25 @@ export default function AdminDashboard() {
                           </td>
                           <td className="py-3 px-2 text-xs text-stone-500">
                             {c.email}
+                          </td>
+                          <td className="py-3 px-2 text-center">
+                            {c.firstPurchaseUsed ? (
+                              <button
+                                onClick={() => handleToggleCoupon(c.id, true)}
+                                title="Clic para reactivar el cupón a este cliente"
+                                className="inline-flex items-center gap-1 bg-stone-100 text-stone-600 hover:bg-stone-200 text-[10px] font-bold px-2 py-0.5 rounded-full transition"
+                              >
+                                🔴 Canjeado <RotateCcw size={10} />
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => handleToggleCoupon(c.id, false)}
+                                title="Clic para marcar como canjeado"
+                                className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 hover:bg-emerald-200 text-[10px] font-bold px-2 py-0.5 rounded-full transition"
+                              >
+                                🟢 Disponible (15%)
+                              </button>
+                            )}
                           </td>
                           <td className="py-3 px-2 text-center">
                             <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-900 border border-amber-200 font-bold px-3 py-1 rounded-full text-xs">
@@ -1136,6 +1812,158 @@ export default function AdminDashboard() {
           </div>
         )}
       </main>
+
+      {/* MODAL DE RECIBO FORMAL IMPRIMIBLE / COMPARTIBLE */}
+      {activeReceipt && (
+        <div 
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6 overflow-y-auto animate-in fade-in"
+          onClick={() => setActiveReceipt(null)}
+        >
+          <div 
+            className="bg-white rounded-3xl max-w-lg w-full overflow-hidden shadow-2xl border border-stone-200 relative my-6 text-gray-900 transform transition-all duration-300 animate-in zoom-in-95"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header del Recibo */}
+            <div className="bg-[#FAF3EC] p-6 text-center border-b border-stone-200 relative">
+              <button
+                onClick={() => setActiveReceipt(null)}
+                className="absolute top-4 right-4 w-8 h-8 rounded-full bg-white/80 hover:bg-black hover:text-white text-stone-600 flex items-center justify-center transition border border-stone-200"
+              >
+                <X size={16} />
+              </button>
+
+              <h3 className="text-2xl font-serif tracking-[0.15em] font-bold text-gray-900">
+                LILIANA SALON
+              </h3>
+              <p className="text-[10px] uppercase tracking-widest text-[#A8623D] font-bold mt-1">
+                Belleza & Cuidado Capilar Profesional
+              </p>
+              <p className="text-[11px] text-stone-500 mt-1">
+                WhatsApp: +502 4208-3721 • Distribuidor Oficial Guatemala 🇬🇹 & El Salvador 🇸🇻
+              </p>
+            </div>
+
+            {/* Cuerpo del Recibo */}
+            <div className="p-6 space-y-5 text-xs">
+              <div className="flex justify-between items-center border-b border-stone-100 pb-3">
+                <div>
+                  <span className="text-stone-400 block text-[10px] uppercase tracking-wider">Recibo Oficial</span>
+                  <span className="font-mono font-bold text-sm text-gray-900">#{activeReceipt.orderNumber}</span>
+                </div>
+                <div className="text-right">
+                  <span className="text-stone-400 block text-[10px] uppercase tracking-wider">Fecha de Emisión</span>
+                  <span className="font-medium text-stone-700">
+                    {activeReceipt.createdAt?.seconds 
+                      ? new Date(activeReceipt.createdAt.seconds * 1000).toLocaleDateString()
+                      : new Date().toLocaleDateString()}
+                  </span>
+                </div>
+              </div>
+
+              {/* Datos del Cliente */}
+              <div className="bg-stone-50 p-3.5 rounded-xl border border-stone-100">
+                <span className="text-[10px] text-stone-400 uppercase tracking-wider block mb-1">Cliente Autorizado</span>
+                <div className="font-bold text-sm text-gray-900">{activeReceipt.customerName}</div>
+                <div className="text-stone-600 text-xs">{activeReceipt.customerEmail}</div>
+                {activeReceipt.customerPhone && (
+                  <div className="text-stone-500 text-[11px] flex items-center gap-1 mt-1">
+                    <Phone size={11} className="text-[#25D366]" /> {activeReceipt.customerPhone}
+                  </div>
+                )}
+              </div>
+
+              {/* Tabla de Artículos */}
+              <div className="border border-stone-200 rounded-xl overflow-hidden">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-stone-100 text-stone-600 text-[10px] uppercase tracking-wider">
+                    <tr>
+                      <th className="p-2.5">Detalle del Producto</th>
+                      <th className="p-2.5 text-center">Cant.</th>
+                      <th className="p-2.5 text-right">Precio</th>
+                      <th className="p-2.5 text-right">Subtotal</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-stone-100">
+                    {activeReceipt.items?.map((it, idx) => {
+                      const sym = activeReceipt.currency === "GTQ" ? "Q" : "$";
+                      return (
+                        <tr key={idx}>
+                          <td className="p-2.5 font-medium">
+                            {it.productName} {it.volume && <span className="text-stone-500 font-normal">({it.volume})</span>}
+                          </td>
+                          <td className="p-2.5 text-center">{it.quantity}</td>
+                          <td className="p-2.5 text-right text-stone-600">{sym}{it.unitPrice.toFixed(2)}</td>
+                          <td className="p-2.5 text-right font-semibold">{sym}{it.totalPrice.toFixed(2)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Totales y Descuentos */}
+              <div className="space-y-1.5 pt-2 border-t border-stone-100">
+                {(() => {
+                  const sym = activeReceipt.currency === "GTQ" ? "Q" : "$";
+                  return (
+                    <>
+                      <div className="flex justify-between text-stone-600">
+                        <span>Subtotal:</span>
+                        <span>{sym}{activeReceipt.subtotal.toFixed(2)}</span>
+                      </div>
+                      {activeReceipt.couponApplied && (
+                        <div className="flex justify-between text-emerald-800 font-semibold bg-emerald-50 px-2 py-1 rounded">
+                          <span className="flex items-center gap-1">
+                            <Gift size={12} /> Descuento 15% Bienvenida (1 producto):
+                          </span>
+                          <span>-{sym}{activeReceipt.discount.toFixed(2)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between text-stone-600 pt-1">
+                        <span>Método de pago:</span>
+                        <span className="font-medium text-stone-800">{activeReceipt.paymentMethod}</span>
+                      </div>
+                      <div className="flex justify-between text-base font-bold text-gray-900 pt-2 border-t border-stone-200">
+                        <span>TOTAL PAGADO:</span>
+                        <span>{sym}{activeReceipt.total.toFixed(2)} {activeReceipt.currency}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-[#A8623D] font-semibold text-[11px] pt-1 bg-[#FAF3EC] p-2 rounded-lg">
+                        <span className="flex items-center gap-1"><Coins size={12} /> Puntos acumulados en esta compra:</span>
+                        <span className="font-bold">+{activeReceipt.pointsEarned} pts</span>
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
+
+              {/* Mensaje de Garantía */}
+              <p className="text-[10px] text-stone-400 text-center flex items-center justify-center gap-1 pt-1">
+                <ShieldCheck size={12} className="text-stone-400" />
+                Liliana Salon garantiza la autenticidad de los productos Keratech e IvoGa.
+              </p>
+
+              {/* Botones de Acción */}
+              <div className="pt-3 border-t border-stone-200 flex flex-col sm:flex-row gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="flex-1 bg-stone-900 hover:bg-black text-white py-3 rounded-xl font-bold uppercase tracking-wider text-xs flex items-center justify-center gap-2 transition shadow-sm"
+                >
+                  <Printer size={15} /> Imprimir / PDF
+                </button>
+                <a
+                  href={`https://wa.me/${(activeReceipt.customerPhone || "").replace(/[^0-9]/g, "")}?text=${generateWhatsAppReceiptText(activeReceipt)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex-1 bg-[#25D366] hover:bg-[#20ba59] text-white py-3 rounded-xl font-bold uppercase tracking-wider text-xs flex items-center justify-center gap-2 transition shadow-sm"
+                >
+                  <Send size={15} /> Enviar WhatsApp
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
