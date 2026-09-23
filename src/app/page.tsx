@@ -347,7 +347,7 @@ export default function Home() {
           </div>
         ) : filteredProducts.length === 0 ? (
           <div className="py-20 text-center">
-            <p className="text-stone-500 text-sm">No hay productos en la categoría "{selectedCategory}".</p>
+            <p className="text-stone-500 text-sm">No hay productos en la categoría &quot;{selectedCategory}&quot;.</p>
             <button 
               onClick={() => setSelectedCategory("TODOS")} 
               className="mt-3 text-xs font-semibold uppercase tracking-wider underline text-black"

@@ -230,61 +230,6 @@ export default function AdminDashboard() {
   const [customers, setCustomers] = useState<CustomerUser[]>([]);
   const [savingSettings, setSavingSettings] = useState(false);
 
-  // Verificación estricta de sesión y permisos de administrador
-  useEffect(() => {
-    if (!auth) {
-      router.push("/admin/login");
-      return;
-    }
-
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      if (!currentUser) {
-        if (typeof window !== "undefined") {
-          localStorage.removeItem("admin_session");
-        }
-        router.push("/admin/login");
-        return;
-      }
-
-      // Verificar en Firestore si la cuenta tiene rol "admin"
-      let isAuthorized = false;
-      if (db) {
-        try {
-          const userDoc = await getDoc(doc(db, "users", currentUser.uid));
-          if (userDoc.exists() && userDoc.data()?.role === "admin") {
-            isAuthorized = true;
-          }
-        } catch (e) {
-          console.error("Error verificando permisos de administrador", e);
-        }
-      }
-
-      // Comprobación de seguridad por correo del salón
-      const cleanEmail = (currentUser.email || "").toLowerCase();
-      if (cleanEmail.includes("admin") || cleanEmail.includes("liliana")) {
-        isAuthorized = true;
-      }
-
-      if (isAuthorized) {
-        if (typeof window !== "undefined") {
-          localStorage.setItem("admin_session", "true");
-        }
-        setAuthChecking(false);
-        fetchProducts();
-        fetchLoyaltyData();
-        fetchOrders();
-      } else {
-        // Usuario con cuenta de cliente intentando acceder al panel admin
-        if (typeof window !== "undefined") {
-          localStorage.removeItem("admin_session");
-        }
-        router.push("/admin/login?error=unauthorized");
-      }
-    });
-
-    return () => unsubscribe();
-  }, [router]);
-
   const fetchProducts = async () => {
     setLoading(true);
     try {
@@ -307,20 +252,14 @@ export default function AdminDashboard() {
   const fetchLoyaltyData = async () => {
     if (!db) return;
     try {
-      // 1. Cargar configuración de fidelización
       const settingsSnap = await getDoc(doc(db, "settings", "loyalty"));
       if (settingsSnap.exists()) {
         setLoyaltySettings(settingsSnap.data() as LoyaltySettings);
       }
 
-      // 2. Cargar clientes registrados
       const usersSnap = await getDocs(collection(db, "users"));
       const userList = usersSnap.docs.map(d => ({ id: d.id, ...d.data() } as CustomerUser));
-      setCustomers(userList.filter(u => 
-        u.role !== "admin" && 
-        !u.email?.toLowerCase().includes("admin") && 
-        !u.email?.toLowerCase().includes("liliana")
-      ));
+      setCustomers(userList.filter(u => u.role !== "admin"));
     } catch (err) {
       console.error("Error fetching loyalty data", err);
     }
@@ -342,13 +281,57 @@ export default function AdminDashboard() {
     }
   };
 
+  // Verificación estricta de sesión y permisos de administrador con Custom Claims
+  useEffect(() => {
+    if (!auth) {
+      router.push("/admin/login");
+      return;
+    }
+
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      if (!currentUser) {
+        router.push("/admin/login");
+        return;
+      }
+
+      try {
+        const tokenResult = await currentUser.getIdTokenResult();
+        const isAuthorized = Boolean(tokenResult.claims.admin);
+
+        if (isAuthorized) {
+          setAuthChecking(false);
+          fetchProducts();
+          fetchLoyaltyData();
+          fetchOrders();
+        } else {
+          router.push("/admin/login?error=unauthorized");
+        }
+      } catch (err) {
+        console.error("Error verificando permisos de administrador:", err);
+        router.push("/admin/login?error=unauthorized");
+      }
+    });
+
+    return () => unsubscribe();
+  }, [router]);
+
   const handleToggleCoupon = async (customerId: string, currentUsed: boolean) => {
-    if (!db) return;
     try {
-      await updateDoc(doc(db, "users", customerId), {
-        firstPurchaseUsed: !currentUsed,
-        updatedAt: serverTimestamp()
+      const idToken = await auth?.currentUser?.getIdToken();
+      if (!idToken) throw new Error("No autenticado como administrador");
+
+      const res = await fetch(`/api/admin/users/${customerId}/coupon`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${idToken}`
+        },
+        body: JSON.stringify({ firstPurchaseUsed: !currentUsed })
       });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Error al actualizar cupón");
+
       setCustomers(prev => prev.map(c => c.id === customerId ? { ...c, firstPurchaseUsed: !currentUsed } : c));
       setStatusMessage({
         type: "success",
@@ -384,54 +367,37 @@ export default function AdminDashboard() {
   };
 
   const handleMarkOrderCompleted = async (order: OrderReceipt) => {
-    if (!db || !order.id) return;
+    if (!order.id) return;
     try {
-      const orderRef = doc(db, "orders", order.id);
-      await updateDoc(orderRef, {
-        status: "completada",
-        confirmedAt: serverTimestamp(),
-        updatedAt: serverTimestamp()
+      const idToken = await auth?.currentUser?.getIdToken();
+      if (!idToken) throw new Error("No autenticado como administrador");
+
+      const res = await fetch(`/api/admin/orders/${order.id}/complete`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${idToken}`
+        }
       });
 
-      // Si cliente registrado: quemar cupón y dar puntos
-      if (order.customerId && order.customerId !== "manual" && order.customerId !== "guest") {
-        try {
-          const userRef = doc(db, "users", order.customerId);
-          const updates: any = {
-            points: increment(order.pointsEarned || 0),
-            updatedAt: serverTimestamp()
-          };
-          if (order.couponApplied) {
-            updates.firstPurchaseUsed = true;
-          }
-          await updateDoc(userRef, updates);
-          setCustomers(prev => prev.map(c => c.id === order.customerId ? { 
-            ...c, 
-            points: (c.points || 0) + (order.pointsEarned || 0), 
-            firstPurchaseUsed: order.couponApplied ? true : c.firstPurchaseUsed 
-          } : c));
-        } catch (uErr) {
-          console.warn("Could not update user points or coupon", uErr);
-        }
-      }
-
-      // Descontar inventario de cada producto
-      for (const item of order.items || []) {
-        if (item.productId) {
-          try {
-            await updateDoc(doc(db, "products", item.productId), {
-              stock: increment(-item.quantity)
-            });
-          } catch (pErr) {
-            console.warn(`Could not decrement stock for product ${item.productId}`, pErr);
-          }
-        }
-      }
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Error al completar el pedido");
 
       setOrders(prev => prev.map(o => o.id === order.id ? { ...o, status: "completada" } : o));
+
+      if (order.customerId && order.customerId !== "manual" && order.customerId !== "guest") {
+        setCustomers(prev => prev.map(c => c.id === order.customerId ? { 
+          ...c, 
+          points: (c.points || 0) + (order.pointsEarned || 0), 
+          firstPurchaseUsed: order.couponApplied ? true : c.firstPurchaseUsed 
+        } : c));
+      }
+
+      // Refrescar lista de productos para reflejar inventario actualizado
+      fetchProducts();
+
       setStatusMessage({ 
         type: "success", 
-        text: `¡Pedido #${order.orderNumber} marcado como Compra Efectuada exitosamente! Puntos acreditados e inventario actualizado.` 
+        text: data.message || `¡Pedido #${order.orderNumber} marcado como Compra Efectuada exitosamente!` 
       });
     } catch (err: any) {
       console.error("Error marking completed", err);
@@ -687,9 +653,10 @@ export default function AdminDashboard() {
           setStatusMessage({ type: "success", text: "¡Producto guardado exitosamente en Firebase!" });
         }
       } else {
+        const localId = Date.now().toString();
         const updated = editingId 
           ? products.map(p => p.id === editingId ? { ...productData, id: editingId } : p)
-          : [...products, { ...productData, id: Date.now().toString() }];
+          : [...products, { ...productData, id: localId }];
         localStorage.setItem("mockProducts", JSON.stringify(updated));
         setProducts(updated as any);
         setStatusMessage({ type: "success", text: "Producto guardado (Modo local)." });
@@ -769,8 +736,6 @@ export default function AdminDashboard() {
     if (auth) {
       await signOut(auth);
     }
-    localStorage.removeItem("admin_session");
-    sessionStorage.removeItem("mockAuth");
     router.push("/admin/login");
   };
 

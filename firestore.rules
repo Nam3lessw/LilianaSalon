@@ -1,17 +1,95 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /products/{document=**} {
-      allow read, write: if true;
+
+    // --- Helper Functions ---
+    function isSignedIn() {
+      return request.auth != null;
     }
-    match /users/{document=**} {
-      allow read, write: if true;
+
+    function isAdmin() {
+      return isSignedIn() && request.auth.token.admin == true;
     }
-    match /settings/{document=**} {
-      allow read, write: if true;
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
     }
-    match /orders/{document=**} {
-      allow read, write: if true;
+
+    // --- 1. PRODUCTS ---
+    // Visitors and customers can read active products for the catalog.
+    // ONLY authenticated administrators with verified custom claims can write, update or delete products.
+    match /products/{productId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // --- 2. SETTINGS ---
+    // Store settings (loyalty config, exchange rates, etc.) are publicly readable.
+    // ONLY administrators can modify store settings.
+    match /settings/{settingId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // --- 3. USERS ---
+    // A user can only read their own profile. Admins can view profiles for administration.
+    // Clients CANNOT modify role, admin, points, loyaltyPoints, firstPurchaseUsed, or discountUsed.
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+
+      // Client account registration
+      allow create: if isOwner(userId)
+                    && (!('role' in request.resource.data) || request.resource.data.role == 'customer')
+                    && (!('admin' in request.resource.data) || request.resource.data.admin == false)
+                    && (!('points' in request.resource.data) || request.resource.data.points <= 50)
+                    && (!('loyaltyPoints' in request.resource.data) || request.resource.data.loyaltyPoints <= 50)
+                    && (!('firstPurchaseUsed' in request.resource.data) || request.resource.data.firstPurchaseUsed == false)
+                    && (!('discountUsed' in request.resource.data) || request.resource.data.discountUsed == false);
+
+      // Client updates: only safe fields (name, phone, country, notes).
+      // Sensitive fields CANNOT be altered directly from the browser:
+      allow update: if isAdmin() || (
+        isOwner(userId) &&
+        !request.resource.data.diff(resource.data).affectedKeys()
+          .hasAny(['role', 'admin', 'points', 'loyaltyPoints', 'firstPurchaseUsed', 'discountUsed', 'uid', 'email'])
+      );
+
+      allow delete: if isAdmin();
+    }
+
+    // --- 4. ORDERS ---
+    // An authenticated user can only read their own orders. Admins can read and manage all orders.
+    // Clients CANNOT transition order status, alter total, modify discounts, or change awarded points.
+    match /orders/{orderId} {
+      allow read: if isAdmin() || (
+        isSignedIn() && (
+          resource.data.customerId == request.auth.uid ||
+          (resource.data.customerEmail != null && resource.data.customerEmail == request.auth.token.email)
+        )
+      );
+
+      // Client creation: allowed only when creating order for own uid with status "pendiente"
+      allow create: if isAdmin() || (
+        isSignedIn() &&
+        request.resource.data.customerId == request.auth.uid &&
+        request.resource.data.status == 'pendiente'
+      );
+
+      // Order status transitions (e.g. marking as completada) and price alterations must go through admin/backend
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // --- 5. AUDIT LOGS ---
+    // Only administrators can read audit logs. No direct client writes (written by Firebase Admin SDK).
+    match /auditLogs/{logId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    // --- DEFAULT RULE: DENY ALL ---
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

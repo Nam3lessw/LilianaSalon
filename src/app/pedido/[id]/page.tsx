@@ -1,18 +1,7 @@
 "use client";
 import React, { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { db } from "@/lib/firebase";
-import { 
-  doc, 
-  getDoc, 
-  updateDoc, 
-  collection, 
-  query, 
-  where, 
-  getDocs, 
-  serverTimestamp,
-  increment 
-} from "firebase/firestore";
+import { auth } from "@/lib/firebase";
 import { useAuth } from "@/context/AuthContext";
 import { 
   CheckCircle2, 
@@ -83,29 +72,29 @@ export default function OrderVerificationPage() {
       setLoading(true);
       setError(null);
       try {
-        if (!db) {
-          setError("No se pudo conectar a la base de datos.");
+        let idToken: string | undefined;
+        if (auth?.currentUser) {
+          try {
+            idToken = await auth.currentUser.getIdToken();
+          } catch (tErr) {
+            console.warn("Could not get ID token for order lookup:", tErr);
+          }
+        }
+
+        const res = await fetch(`/api/orders/${encodeURIComponent(orderIdParam)}`, {
+          headers: {
+            ...(idToken ? { "Authorization": `Bearer ${idToken}` } : {})
+          }
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+          setError(data.error || "No se encontró ningún registro para este pedido. Por favor verifica el enlace.");
           setLoading(false);
           return;
         }
 
-        // 1. Intentar buscar por Doc ID
-        const docRef = doc(db, "orders", orderIdParam);
-        const docSnap = await getDoc(docRef);
-
-        if (docSnap.exists()) {
-          setOrder({ id: docSnap.id, ...docSnap.data() } as OrderDetail);
-        } else {
-          // 2. Si no se encontró por ID directo, buscar por orderNumber (ej. LS-12345)
-          const q = query(collection(db, "orders"), where("orderNumber", "==", orderIdParam));
-          const querySnap = await getDocs(q);
-          if (!querySnap.empty) {
-            const first = querySnap.docs[0];
-            setOrder({ id: first.id, ...first.data() } as OrderDetail);
-          } else {
-            setError("No se encontró ningún registro para este pedido. Por favor verifica el enlace.");
-          }
-        }
+        setOrder(data as OrderDetail);
       } catch (err: any) {
         console.error("Error fetching order", err);
         setError("Error al cargar la información del pedido: " + err.message);
@@ -117,53 +106,32 @@ export default function OrderVerificationPage() {
     fetchOrder();
   }, [orderIdParam]);
 
-  // Acción del Admin: "Marcar Compra Efectuada"
+  // Acción del Admin: "Marcar Compra Efectuada" vía backend seguro con Custom Claims
   const handleMarkAsCompleted = async () => {
-    if (!order || !db) return;
+    if (!order) return;
     setConfirming(true);
     try {
-      // 1. Actualizar orden a "completada"
-      const orderRef = doc(db, "orders", order.id);
-      await updateDoc(orderRef, {
-        status: "completada",
-        confirmedAt: serverTimestamp(),
-        updatedAt: serverTimestamp()
+      const idToken = await auth?.currentUser?.getIdToken();
+      if (!idToken) {
+        alert("Debes iniciar sesión con una cuenta de administrador autorizada.");
+        setConfirming(false);
+        return;
+      }
+
+      const res = await fetch(`/api/admin/orders/${order.id}/complete`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${idToken}`
+        }
       });
 
-      // 2. Si hay cliente registrado: quemar cupón y acreditar puntos
-      if (order.customerId && order.customerId !== "guest") {
-        try {
-          const userRef = doc(db, "users", order.customerId);
-          const updates: any = {
-            points: increment(order.pointsEarned || 0),
-            updatedAt: serverTimestamp()
-          };
-          if (order.couponApplied) {
-            updates.firstPurchaseUsed = true;
-          }
-          await updateDoc(userRef, updates);
-        } catch (uErr) {
-          console.warn("Could not update user points or coupon", uErr);
-        }
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Error al confirmar la compra.");
       }
 
-      // 3. Descontar inventario de cada producto
-      for (const item of order.items || []) {
-        if (item.productId) {
-          try {
-            const prodRef = doc(db, "products", item.productId);
-            await updateDoc(prodRef, {
-              stock: increment(-item.quantity)
-            });
-          } catch (pErr) {
-            console.warn(`Could not decrement stock for product ${item.productId}`, pErr);
-          }
-        }
-      }
-
-      // 4. Actualizar estado local
       setOrder(prev => prev ? { ...prev, status: "completada" } : null);
-      setSuccessActionMsg("¡Compra efectuada exitosamente! El pedido ha sido confirmado, el inventario descontado y los puntos acreditados.");
+      setSuccessActionMsg(data.message || "¡Compra efectuada exitosamente! El pedido ha sido confirmado, el inventario descontado y los puntos acreditados.");
 
     } catch (err: any) {
       console.error("Error marking order completed", err);
@@ -252,7 +220,7 @@ export default function OrderVerificationPage() {
             </div>
 
             <p className="text-xs text-stone-300 leading-relaxed">
-              Verifica el comprobante bancario del cliente antes de confirmar. Al presionar <strong>"Compra Efectuada"</strong>, el cupón del 15% se quemará automáticamente, se descontarán las unidades del inventario y se le otorgarán los puntos VIP al cliente.
+              Verifica el comprobante bancario del cliente antes de confirmar. Al presionar <strong>&quot;Compra Efectuada&quot;</strong>, el cupón del 15% se quemará automáticamente, se descontarán las unidades del inventario y se le otorgarán los puntos VIP al cliente.
             </p>
 
             {isPending ? (

@@ -3,8 +3,7 @@ import React, { useState } from "react";
 import { useCart } from "@/context/CartContext";
 import { useCountry } from "@/context/CountryContext";
 import { useAuth } from "@/context/AuthContext";
-import { db } from "@/lib/firebase";
-import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { auth } from "@/lib/firebase";
 import { 
   X, 
   Trash2, 
@@ -70,67 +69,68 @@ export default function CartDrawer() {
     setSubmittingOrder(true);
 
     try {
-      const orderNumber = `LS-${Date.now().toString().slice(-5)}`;
-      const orderItems = items.map(item => {
-        const unitPrice = getItemUnitPrice(item);
-        return {
-          productId: item.id,
-          productName: item.name,
-          brand: item.brand || item.category || "Liliana Salon",
-          volume: item.volume || "",
-          quantity: item.quantity,
-          unitPrice,
-          totalPrice: unitPrice * item.quantity
-        };
-      });
-
-      const orderData = {
-        orderNumber,
-        customerId: user?.uid || "guest",
-        customerName: effectiveName || "Cliente",
-        customerEmail: user?.email || "",
-        customerPhone: effectivePhone || "",
-        country: country, // "GT" o "SV"
-        currency: currencyCode, // "GTQ" o "USD"
-        items: orderItems,
-        subtotal,
-        discount,
-        couponApplied: Boolean(canApplyWelcomeCoupon && applyWelcomeCoupon && discount > 0),
-        couponCode: (canApplyWelcomeCoupon && applyWelcomeCoupon && discount > 0)
-          ? (userProfile?.welcomeCoupon || "BIENVENIDA15")
-          : null,
-        total,
-        pointsEarned: isAdmin ? 0 : pointsToEarn,
-        status: "pendiente", // "pendiente" | "completada" | "cancelada"
-        notes: deliveryNotes.trim() || "",
-        createdAt: serverTimestamp()
-      };
-
-      let orderId = "";
-      if (db) {
-        const docRef = await addDoc(collection(db, "orders"), orderData);
-        orderId = docRef.id;
-      } else {
-        // Fallback local en caso de desconexión
-        orderId = orderNumber;
+      let idToken: string | undefined;
+      if (auth?.currentUser) {
+        try {
+          idToken = await auth.currentUser.getIdToken();
+        } catch (tErr) {
+          console.warn("Could not retrieve user ID Token:", tErr);
+        }
       }
 
-      // Generar URL inalterable del pedido para verificación del vendedor y cliente
-      const origin = typeof window !== "undefined" ? window.location.origin : "https://liliana-salon.vercel.app";
-      const verificationUrl = `${origin}/pedido/${orderId}`;
+      // 1. Enviar carrito a la API segura para validación y cálculo de precios en servidor
+      const payload = {
+        items: items.map(i => ({
+          productId: i.id,
+          quantity: i.quantity
+        })),
+        country,
+        applyWelcomeCoupon: Boolean(canApplyWelcomeCoupon && applyWelcomeCoupon),
+        customerName: effectiveName || "Cliente",
+        customerPhone: effectivePhone || "",
+        customerEmail: user?.email || "",
+        deliveryNotes: deliveryNotes.trim() || ""
+      };
 
-      // Formatear mensaje limpio de WhatsApp sin emojis para compatibilidad total
+      const res = await fetch("/api/orders", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(idToken ? { "Authorization": `Bearer ${idToken}` } : {})
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const orderResult = await res.json();
+      if (!res.ok) {
+        throw new Error(orderResult.error || "No se pudo procesar el pedido. Por favor intenta de nuevo.");
+      }
+
+      const orderId = orderResult.orderId;
+      const orderNumber = orderResult.orderNumber;
+      const verifiedTotal = orderResult.total;
+      const verifiedDiscount = orderResult.discount;
+      const verifiedPoints = orderResult.pointsEarned;
+      const verificationUrl = orderResult.verificationUrl;
+      const verifiedItems: Array<{
+        quantity: number;
+        productName: string;
+        volume?: string;
+        totalPrice: number;
+      }> = orderResult.items || [];
+
+      // Formatear mensaje limpio de WhatsApp utilizando los valores oficiales validados por servidor
       const symbol = currencySymbol;
-      const itemsListText = orderItems
+      const itemsListText = verifiedItems
         .map(i => `* ${i.quantity}x ${i.productName}${i.volume ? ` (${i.volume})` : ""} — ${symbol}${i.totalPrice.toFixed(2)}`)
         .join("\n");
 
-      const couponLine = (!isAdmin && canApplyWelcomeCoupon && applyWelcomeCoupon && discount > 0)
-        ? `\nCupón 1er producto (15%): -${symbol}${discount.toFixed(2)}`
+      const couponLine = verifiedDiscount > 0
+        ? `\nCupón 1er producto (15%): -${symbol}${verifiedDiscount.toFixed(2)}`
         : "";
 
-      const pointsLine = (!isAdmin && pointsToEarn > 0)
-        ? `\nPuntos a ganar: +${pointsToEarn} pts`
+      const pointsLine = verifiedPoints > 0
+        ? `\nPuntos a ganar: +${verifiedPoints} pts`
         : "";
 
       const notesLine = deliveryNotes.trim() ? `\nNota: ${deliveryNotes.trim()}` : "";
@@ -141,7 +141,7 @@ export default function CartDrawer() {
         `Deseo realizar el pedido #${orderNumber}:\n\n` +
         `${itemsListText}\n` +
         `${couponLine}\n` +
-        `TOTAL OFICIAL: ${symbol}${total.toFixed(2)} ${currencyCode}` +
+        `TOTAL OFICIAL: ${symbol}${verifiedTotal.toFixed(2)} ${currencyCode}` +
         `${pointsLine}${notesLine}\n\n` +
         `Verificar pedido oficial:\n` +
         `${verificationUrl}\n\n` +

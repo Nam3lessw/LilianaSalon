@@ -58,18 +58,17 @@ export default function CustomerAuthModal() {
           await updateProfile(userCred.user, { displayName: name.trim() });
         }
 
-        // Create user document with 50 points and 15% coupon for customers, no coupon or points for admin
+        // Create customer profile with initial welcome benefits
         if (db) {
-          const isPotentialAdmin = email.toLowerCase().includes("admin") || email.toLowerCase().includes("liliana");
           await setDoc(doc(db, "users", userCred.user.uid), {
             uid: userCred.user.uid,
             name: name.trim() || email.split("@")[0],
             email: email.trim(),
-            role: isPotentialAdmin ? "admin" : "customer",
+            role: "customer",
             country: selectedCountry,
-            points: isPotentialAdmin ? 0 : 50, // 50 puntos para clientes, 0 para admin
-            welcomeCoupon: isPotentialAdmin ? null : "BIENVENIDA15",
-            firstPurchaseUsed: isPotentialAdmin ? true : false,
+            points: 50, // 50 puntos de bienvenida
+            welcomeCoupon: "BIENVENIDA15",
+            firstPurchaseUsed: false,
             createdAt: serverTimestamp()
           });
         }
@@ -77,9 +76,7 @@ export default function CustomerAuthModal() {
         setCountry(selectedCountry);
 
         setSuccessMsg(
-          (email.toLowerCase().includes("admin") || email.toLowerCase().includes("liliana"))
-            ? "¡Cuenta de Administrador creada exitosamente!"
-            : `¡Felicidades! Tu cuenta fue creada en ${selectedCountry === "GT" ? "Guatemala (Q)" : "El Salvador ($)"}. Recibiste tu cupón de 15% OFF y 50 Puntos.`
+          `¡Felicidades! Tu cuenta fue creada en ${selectedCountry === "GT" ? "Guatemala (Q)" : "El Salvador ($)"}. Recibiste tu cupón de 15% OFF y 50 Puntos.`
         );
         await refreshProfile();
         setTimeout(() => {

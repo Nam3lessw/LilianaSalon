@@ -9,8 +9,7 @@ import {
   doc, 
   getDoc, 
   setDoc, 
-  serverTimestamp, 
-  onSnapshot 
+  serverTimestamp 
 } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 
@@ -20,7 +19,7 @@ export interface UserProfile {
   email: string;
   role: "admin" | "customer";
   points: number;
-  welcomeCoupon: string;
+  welcomeCoupon: string | null;
   firstPurchaseUsed: boolean;
   country?: "GT" | "SV";
   createdAt?: any;
@@ -59,6 +58,7 @@ const AuthContext = createContext<AuthContextType>({
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [authModalTab, setAuthModalTab] = useState<"login" | "register">("login");
@@ -72,38 +72,44 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
-      if (currentUser && db) {
+
+      if (currentUser) {
         try {
-          const userDocRef = doc(db, "users", currentUser.uid);
-          const docSnap = await getDoc(userDocRef);
+          // Cryptographically verify custom claims via Firebase Auth ID Token
+          const tokenResult = await currentUser.getIdTokenResult();
+          const hasAdminClaim = Boolean(tokenResult.claims.admin);
+          setIsAdmin(hasAdminClaim);
 
-          if (docSnap.exists()) {
-            setUserProfile(docSnap.data() as UserProfile);
-          } else {
-            // Check if this is the admin account or customer
-            const isPotentialAdmin = 
-              currentUser.email?.toLowerCase().includes("admin") ||
-              currentUser.email?.toLowerCase().includes("liliana");
+          if (db) {
+            const userDocRef = doc(db, "users", currentUser.uid);
+            const docSnap = await getDoc(userDocRef);
 
-            const newProfile: UserProfile = {
-              uid: currentUser.uid,
-              name: currentUser.displayName || currentUser.email?.split("@")[0] || "Cliente",
-              email: currentUser.email || "",
-              role: isPotentialAdmin ? "admin" : "customer",
-              points: isPotentialAdmin ? 0 : 50, // 50 puntos de bienvenida para clientes
-              welcomeCoupon: "BIENVENIDA15",
-              firstPurchaseUsed: false,
-              createdAt: serverTimestamp()
-            };
+            if (docSnap.exists()) {
+              setUserProfile(docSnap.data() as UserProfile);
+            } else {
+              // Create default profile for the user
+              const newProfile: UserProfile = {
+                uid: currentUser.uid,
+                name: currentUser.displayName || currentUser.email?.split("@")[0] || "Cliente",
+                email: currentUser.email || "",
+                role: hasAdminClaim ? "admin" : "customer",
+                points: hasAdminClaim ? 0 : 50,
+                welcomeCoupon: hasAdminClaim ? null : "BIENVENIDA15",
+                firstPurchaseUsed: hasAdminClaim ? true : false,
+                createdAt: serverTimestamp()
+              };
 
-            await setDoc(userDocRef, newProfile);
-            setUserProfile(newProfile);
+              await setDoc(userDocRef, newProfile);
+              setUserProfile(newProfile);
+            }
           }
         } catch (err) {
-          console.error("Error loading user profile:", err);
+          console.error("Error loading user profile and claims:", err);
+          setIsAdmin(false);
         }
       } else {
         setUserProfile(null);
+        setIsAdmin(false);
       }
       setLoading(false);
     });
@@ -124,34 +130,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (auth) {
       await firebaseSignOut(auth);
     }
-    sessionStorage.removeItem("mockAuth");
     setUser(null);
     setUserProfile(null);
+    setIsAdmin(false);
     setCustomerDrawerOpen(false);
   };
 
   const refreshProfile = async () => {
-    if (user && db) {
-      const docSnap = await getDoc(doc(db, "users", user.uid));
-      if (docSnap.exists()) {
-        setUserProfile(docSnap.data() as UserProfile);
+    if (user) {
+      try {
+        const tokenResult = await user.getIdTokenResult(true);
+        setIsAdmin(Boolean(tokenResult.claims.admin));
+
+        if (db) {
+          const docSnap = await getDoc(doc(db, "users", user.uid));
+          if (docSnap.exists()) {
+            setUserProfile(docSnap.data() as UserProfile);
+          }
+        }
+      } catch (e) {
+        console.error("Error refreshing user profile:", e);
       }
     }
   };
-
-  // Determine if admin
-  const isAdmin = 
-    userProfile?.role === "admin" || 
-    user?.email?.toLowerCase().includes("admin") ||
-    user?.email?.toLowerCase().includes("liliana") ||
-    (typeof window !== "undefined" && sessionStorage.getItem("mockAuth") === "true");
 
   return (
     <AuthContext.Provider
       value={{
         user,
         userProfile,
-        isAdmin: !!isAdmin,
+        isAdmin,
         loading,
         authModalOpen,
         authModalTab,
