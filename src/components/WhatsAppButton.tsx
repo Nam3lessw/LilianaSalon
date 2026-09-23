@@ -1,40 +1,214 @@
 "use client";
-import { MessageCircle } from "lucide-react";
-import { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
+import { 
+  MessageCircle, 
+  Phone, 
+  X, 
+  Check, 
+  Globe, 
+  Coins,
+  ChevronUp
+} from "lucide-react";
+import { useCountry } from "@/context/CountryContext";
 
 export default function WhatsAppButton() {
-  const phoneNumber = "50242083721";
-  const message = "Hola Liliana Salon, me gustaría recibir información sobre los productos y tratamientos.";
-  const url = `https://wa.me/${phoneNumber}?text=${encodeURIComponent(message)}`;
+  const { country, countryName, setCountry, currencySymbol } = useCountry();
+  const [isOpen, setIsOpen] = useState(false);
+  const [tooltipHovered, setTooltipHovered] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
 
-  const [hovered, setHovered] = useState(false);
+  const phoneNumber = "50242083721";
+  const message = `Hola Liliana Salon, me gustaría recibir asesoría sobre productos y tratamientos desde ${countryName}.`;
+  const whatsappUrl = `https://wa.me/${phoneNumber}?text=${encodeURIComponent(message)}`;
+  const phoneCallUrl = `tel:+${phoneNumber}`;
+
+  // Close when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setIsOpen(false);
+      }
+    };
+
+    if (isOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+      document.addEventListener("keydown", handleKeyDown);
+    }
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOpen]);
+
+  const handleSelectCountry = (newCountry: "GT" | "SV") => {
+    setCountry(newCountry);
+    // Keep menu open for immediate feedback, or close smoothly after a short delay
+    setTimeout(() => {
+      setIsOpen(false);
+    }, 350);
+  };
 
   return (
-    <div className="fixed bottom-5 right-5 sm:bottom-7 sm:right-7 z-50 flex items-center gap-3">
-      {/* Tooltip flotante con transición suave */}
+    <div 
+      ref={containerRef}
+      className="fixed bottom-5 right-5 sm:bottom-7 sm:right-7 z-50 flex flex-col items-end pointer-events-auto select-none"
+    >
+      {/* Menú desplegable hacia arriba (Speed Dial) */}
       <div 
-        className={`hidden sm:flex items-center gap-1.5 bg-white/95 text-stone-800 text-xs font-semibold py-1.5 px-3 rounded-full shadow-lg border border-stone-200/80 transition-all duration-300 ${
-          hovered ? "opacity-100 translate-x-0" : "opacity-0 translate-x-2 pointer-events-none"
+        className={`flex flex-col items-end space-y-2.5 mb-3 transition-all duration-300 ease-out origin-bottom ${
+          isOpen 
+            ? "opacity-100 translate-y-0 scale-100 pointer-events-auto" 
+            : "opacity-0 translate-y-8 scale-90 pointer-events-none"
         }`}
       >
-        <span className="w-2 h-2 rounded-full bg-[#25D366] animate-pulse"></span>
-        <span>¿Dudas? Chatea con Liliana</span>
+        {/* Cabecera / Banner descriptivo del menú */}
+        <div className="bg-stone-900/95 backdrop-blur-md text-white text-[11px] font-medium py-1.5 px-3.5 rounded-full shadow-lg border border-stone-800 flex items-center gap-1.5 mb-1 animate-in fade-in duration-200">
+          <Globe size={13} className="text-[#C08261]" />
+          <span>Atención & Moneda</span>
+        </div>
+
+        {/* 1. Opción Moneda: El Salvador (USD $) */}
+        <div 
+          onClick={() => handleSelectCountry("SV")}
+          className="flex items-center gap-2.5 cursor-pointer group transition-transform active:scale-95"
+        >
+          <div className="bg-white/95 backdrop-blur-sm text-stone-800 text-xs font-semibold py-1.5 px-3 rounded-full shadow-md border border-stone-200/90 flex items-center gap-2 group-hover:border-[#C08261] group-hover:text-black transition">
+            <span className="text-base leading-none">🇸🇻</span>
+            <span>El Salvador</span>
+            <span className="text-stone-500 font-mono text-[11px]">($ USD)</span>
+            {country === "SV" && (
+              <span className="bg-emerald-100 text-emerald-700 text-[10px] font-bold px-1.5 py-0.5 rounded-full flex items-center gap-0.5">
+                <Check size={11} /> Activo
+              </span>
+            )}
+          </div>
+          <button
+            type="button"
+            aria-label="Seleccionar El Salvador"
+            className={`w-11 h-11 rounded-full shadow-lg flex items-center justify-center transition-all ${
+              country === "SV" 
+                ? "bg-[#C08261] text-white ring-2 ring-offset-2 ring-[#C08261] scale-105" 
+                : "bg-white text-stone-700 border border-stone-200 hover:bg-stone-100"
+            }`}
+          >
+            <span className="font-bold text-sm">$</span>
+          </button>
+        </div>
+
+        {/* 2. Opción Moneda: Guatemala (GTQ Q) */}
+        <div 
+          onClick={() => handleSelectCountry("GT")}
+          className="flex items-center gap-2.5 cursor-pointer group transition-transform active:scale-95"
+        >
+          <div className="bg-white/95 backdrop-blur-sm text-stone-800 text-xs font-semibold py-1.5 px-3 rounded-full shadow-md border border-stone-200/90 flex items-center gap-2 group-hover:border-[#C08261] group-hover:text-black transition">
+            <span className="text-base leading-none">🇬🇹</span>
+            <span>Guatemala</span>
+            <span className="text-stone-500 font-mono text-[11px]">(Q GTQ)</span>
+            {country === "GT" && (
+              <span className="bg-emerald-100 text-emerald-700 text-[10px] font-bold px-1.5 py-0.5 rounded-full flex items-center gap-0.5">
+                <Check size={11} /> Activo
+              </span>
+            )}
+          </div>
+          <button
+            type="button"
+            aria-label="Seleccionar Guatemala"
+            className={`w-11 h-11 rounded-full shadow-lg flex items-center justify-center transition-all ${
+              country === "GT" 
+                ? "bg-[#C08261] text-white ring-2 ring-offset-2 ring-[#C08261] scale-105" 
+                : "bg-white text-stone-700 border border-stone-200 hover:bg-stone-100"
+            }`}
+          >
+            <span className="font-bold text-sm">Q</span>
+          </button>
+        </div>
+
+        {/* 3. Opción: Llamada Telefónica */}
+        <a
+          href={phoneCallUrl}
+          className="flex items-center gap-2.5 group transition-transform active:scale-95"
+        >
+          <div className="bg-white/95 backdrop-blur-sm text-stone-800 text-xs font-semibold py-1.5 px-3 rounded-full shadow-md border border-stone-200/90 group-hover:border-teal-500 transition">
+            <span>Llamar al Salón</span>
+            <span className="text-stone-400 font-mono text-[10px] ml-1">(+502 4208-3721)</span>
+          </div>
+          <div className="w-11 h-11 rounded-full bg-teal-600 hover:bg-teal-700 text-white shadow-lg flex items-center justify-center transition">
+            <Phone size={18} />
+          </div>
+        </a>
+
+        {/* 4. Opción: Chat directo de WhatsApp */}
+        <a
+          href={whatsappUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-2.5 group transition-transform active:scale-95"
+        >
+          <div className="bg-white/95 backdrop-blur-sm text-stone-800 text-xs font-semibold py-1.5 px-3 rounded-full shadow-md border border-stone-200/90 group-hover:border-[#25D366] transition flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-[#25D366] animate-pulse"></span>
+            <span>Chatear por WhatsApp</span>
+          </div>
+          <div className="w-11 h-11 rounded-full bg-[#25D366] hover:bg-[#20ba59] text-white shadow-lg flex items-center justify-center transition">
+            <MessageCircle size={20} />
+          </div>
+        </a>
       </div>
 
-      <a
-        href={url}
-        target="_blank"
-        rel="noopener noreferrer"
-        onMouseEnter={() => setHovered(true)}
-        onMouseLeave={() => setHovered(false)}
-        className="relative group bg-[#25D366] hover:bg-[#20ba59] text-white p-3.5 sm:p-4 rounded-full shadow-xl hover:shadow-2xl transition-all duration-300 hover:scale-110 active:scale-95 flex items-center justify-center"
-        aria-label="Contactar por WhatsApp"
-      >
-        {/* Onda de pulsación sutil */}
-        <span className="absolute -inset-1 rounded-full bg-[#25D366] opacity-30 animate-ping pointer-events-none"></span>
+      {/* Botón Principal Flotante (FAB Trigger) */}
+      <div className="flex items-center gap-3">
+        {/* Tooltip de sugerencia cuando está cerrado (solo en pantallas grandes) */}
+        {!isOpen && (
+          <div 
+            className={`hidden sm:flex items-center gap-1.5 bg-white/95 backdrop-blur-sm text-stone-800 text-xs font-semibold py-1.5 px-3.5 rounded-full shadow-lg border border-stone-200/80 transition-all duration-300 ${
+              tooltipHovered ? "opacity-100 translate-x-0" : "opacity-0 translate-x-2 pointer-events-none"
+            }`}
+          >
+            <span className="text-sm">{country === "GT" ? "🇬🇹" : "🇸🇻"}</span>
+            <span>WhatsApp & Moneda ({currencySymbol})</span>
+          </div>
+        )}
 
-        <MessageCircle size={26} className="relative z-10 transition-transform duration-300 group-hover:rotate-12" />
-      </a>
+        <button
+          type="button"
+          onClick={() => setIsOpen(prev => !prev)}
+          onMouseEnter={() => setTooltipHovered(true)}
+          onMouseLeave={() => setTooltipHovered(false)}
+          className={`relative group p-4 sm:p-4 rounded-full shadow-xl hover:shadow-2xl transition-all duration-300 flex items-center justify-center active:scale-95 ${
+            isOpen 
+              ? "bg-stone-900 text-white rotate-90 scale-105" 
+              : "bg-[#25D366] hover:bg-[#20ba59] text-white hover:scale-105"
+          }`}
+          aria-label={isOpen ? "Cerrar menú de atención" : "Abrir menú de atención y moneda"}
+          aria-expanded={isOpen}
+        >
+          {/* Badge de moneda activa cuando está cerrado */}
+          {!isOpen && (
+            <span className="absolute -top-1.5 -left-1.5 bg-white text-stone-900 text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow-md border border-stone-200 flex items-center gap-0.5 animate-in zoom-in-75">
+              <span>{country === "GT" ? "🇬🇹" : "🇸🇻"}</span>
+              <span>{currencySymbol}</span>
+            </span>
+          )}
+
+          {/* Sutil pulso verde cuando está cerrado */}
+          {!isOpen && (
+            <span className="absolute -inset-1 rounded-full bg-[#25D366] opacity-25 animate-ping pointer-events-none"></span>
+          )}
+
+          {/* Ícono dinámico */}
+          {isOpen ? (
+            <X size={24} className="relative z-10 transition-transform duration-300" />
+          ) : (
+            <MessageCircle size={26} className="relative z-10 transition-transform duration-300 group-hover:rotate-12" />
+          )}
+        </button>
+      </div>
     </div>
   );
 }
