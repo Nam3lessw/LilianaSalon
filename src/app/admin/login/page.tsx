@@ -49,6 +49,8 @@ function LoginForm() {
             email: email.trim(),
             role: "admin",
             points: 0,
+            welcomeCoupon: null,
+            firstPurchaseUsed: true,
             createdAt: serverTimestamp()
           });
         }

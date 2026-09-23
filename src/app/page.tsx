@@ -10,7 +10,7 @@ import { useCountry } from "@/context/CountryContext";
 import { useCart } from "@/context/CartContext";
 
 export default function Home() {
-  const { user, userProfile, openAuthModal, setCustomerDrawerOpen } = useAuth();
+  const { user, userProfile, isAdmin, openAuthModal, setCustomerDrawerOpen } = useAuth();
   const { country, currency, currencySymbol, countryName, countryFlag, formatPrice, getRawPrice } = useCountry();
   const { addToCart, setIsCartOpen, totalItems, total } = useCart();
 
@@ -185,83 +185,85 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Barra Publicitaria Persuasiva: 15% OFF Primera Compra (Inspirada en diseño Wix Luxury) */}
-      <section className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 w-full -mt-6 sm:-mt-10 mb-2">
-        <div className="bg-gradient-to-r from-[#F9EFE7] via-[#F4E3D5] to-[#EEDCCE] rounded-2xl sm:rounded-3xl border border-[#E6D0BE] overflow-hidden shadow-[0_8px_30px_rgba(192,130,97,0.08)] relative">
-          <div className="grid grid-cols-1 md:grid-cols-12 items-center">
-            {/* Contenido / Textos Persuasivos */}
-            <div className="p-5 sm:p-8 md:p-10 md:col-span-7 flex flex-col justify-center text-left z-10">
-              <span className="text-[10px] sm:text-xs uppercase tracking-[0.25em] font-bold text-[#A8623D] mb-1.5 sm:mb-2 block">
-                {userProfile?.firstPurchaseUsed 
-                  ? "Beneficio VIP Exclusivo" 
-                  : "¿COMPRAS POR PRIMERA VEZ?"}
-              </span>
-
-              <h3 className="text-2xl sm:text-3xl md:text-4xl font-serif text-gray-900 leading-[1.15] mb-2 sm:mb-3 font-normal">
-                {userProfile?.firstPurchaseUsed ? (
-                  <>ACUMULA PUNTOS<br /><span className="font-bold text-[#A8623D]">EN CADA COMPRA</span></>
-                ) : user ? (
-                  <>TU 15% DE DESCUENTO<br /><span className="font-bold text-[#A8623D]">ESTÁ DISPONIBLE</span></>
-                ) : (
-                  <>-15% EN TU<br /><span className="font-bold text-[#A8623D]">PRIMERA COMPRA</span></>
-                )}
-              </h3>
-
-              <p className="text-xs sm:text-sm text-stone-700 mb-4 sm:mb-5 max-w-md leading-relaxed font-light">
-                {userProfile?.firstPurchaseUsed ? (
-                  "Como cliente consentida de Liliana Salon, cada compra te otorga puntos canjeables por productos y descuentos en tu próximo pedido."
-                ) : user ? (
-                  `Tu cupón BIENVENIDA15 está autorizado para tu correo (${user.email}). Aplícalo en 1 solo producto al ordenar por WhatsApp.`
-                ) : (
-                  "Crea tu cuenta gratis hoy para recibir un cupón exclusivo del 15% OFF en tu primer producto. Válido una sola vez al ordenar."
-                )}
-              </p>
-
-              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2.5 sm:gap-3">
-                {userProfile?.firstPurchaseUsed ? (
-                  <button
-                    onClick={() => setCustomerDrawerOpen(true)}
-                    className="bg-[#B85728] hover:bg-[#9E461D] text-white px-6 py-3 text-xs tracking-[0.2em] font-bold uppercase transition-all duration-300 hover:scale-[1.02] active:scale-[0.98] rounded-xl shadow-md flex items-center gap-2"
-                  >
-                    <Coins size={15} /> VER MIS PUNTOS
-                  </button>
-                ) : user ? (
-                  <button
-                    onClick={() => setCustomerDrawerOpen(true)}
-                    className="bg-[#B85728] hover:bg-[#9E461D] text-white px-6 py-3 text-xs tracking-[0.2em] font-bold uppercase transition-all duration-300 hover:scale-[1.02] active:scale-[0.98] rounded-xl shadow-md flex items-center gap-2"
-                  >
-                    <Gift size={15} /> VER MI CUPÓN (BIENVENIDA15)
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => openAuthModal("register")}
-                    className="bg-[#B85728] hover:bg-[#9E461D] text-white px-7 py-3 text-xs tracking-[0.2em] font-bold uppercase transition-all duration-300 hover:scale-[1.02] active:scale-[0.98] rounded-xl shadow-md flex items-center gap-2"
-                  >
-                    <Sparkles size={15} /> OBTENER 15% OFF
-                  </button>
-                )}
-
-                <span className="text-[10px] text-stone-500 font-medium">
-                  *Aplica en 1 solo producto. 1 uso por cliente.
+      {/* Barra Publicitaria Persuasiva: 15% OFF Primera Compra (Solo clientes, no admin) */}
+      {!isAdmin && (
+        <section className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 w-full -mt-6 sm:-mt-10 mb-2">
+          <div className="bg-gradient-to-r from-[#F9EFE7] via-[#F4E3D5] to-[#EEDCCE] rounded-2xl sm:rounded-3xl border border-[#E6D0BE] overflow-hidden shadow-[0_8px_30px_rgba(192,130,97,0.08)] relative">
+            <div className="grid grid-cols-1 md:grid-cols-12 items-center">
+              {/* Contenido / Textos Persuasivos */}
+              <div className="p-5 sm:p-8 md:p-10 md:col-span-7 flex flex-col justify-center text-left z-10">
+                <span className="text-[10px] sm:text-xs uppercase tracking-[0.25em] font-bold text-[#A8623D] mb-1.5 sm:mb-2 block">
+                  {userProfile?.firstPurchaseUsed 
+                    ? "Beneficio VIP Exclusivo" 
+                    : "¿COMPRAS POR PRIMERA VEZ?"}
                 </span>
-              </div>
-            </div>
 
-            {/* Imagen Estética de Productos / Goteros estilo Serum */}
-            <div className="md:col-span-5 relative h-44 sm:h-56 md:h-full min-h-[190px] md:min-h-[260px] overflow-hidden flex items-center justify-center p-3 sm:p-4">
-              <div className="absolute inset-0 bg-gradient-to-t md:bg-gradient-to-l from-transparent via-transparent to-[#F9EFE7] z-10 hidden md:block"></div>
-              <img 
-                src="https://images.unsplash.com/photo-1608248543803-ba4f8c70ae0b?q=80&w=800&auto=format&fit=crop" 
-                alt="15% Descuento Liliana Salon"
-                className="w-full h-full object-cover object-center rounded-xl md:rounded-none opacity-90 hover:scale-105 transition-transform duration-700" 
-              />
-              <div className="absolute top-4 right-4 bg-white/95 backdrop-blur-sm border border-stone-200 text-stone-900 text-[10px] sm:text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider shadow-sm z-20">
-                15% OFF
+                <h3 className="text-2xl sm:text-3xl md:text-4xl font-serif text-gray-900 leading-[1.15] mb-2 sm:mb-3 font-normal">
+                  {userProfile?.firstPurchaseUsed ? (
+                    <>ACUMULA PUNTOS<br /><span className="font-bold text-[#A8623D]">EN CADA COMPRA</span></>
+                  ) : user ? (
+                    <>TU 15% DE DESCUENTO<br /><span className="font-bold text-[#A8623D]">ESTÁ DISPONIBLE</span></>
+                  ) : (
+                    <>-15% EN TU<br /><span className="font-bold text-[#A8623D]">PRIMERA COMPRA</span></>
+                  )}
+                </h3>
+
+                <p className="text-xs sm:text-sm text-stone-700 mb-4 sm:mb-5 max-w-md leading-relaxed font-light">
+                  {userProfile?.firstPurchaseUsed ? (
+                    "Como cliente consentida de Liliana Salon, cada compra te otorga puntos canjeables por productos y descuentos en tu próximo pedido."
+                  ) : user ? (
+                    `Tu cupón BIENVENIDA15 está autorizado para tu correo (${user.email}). Aplícalo en 1 solo producto al ordenar por WhatsApp.`
+                  ) : (
+                    "Crea tu cuenta gratis hoy para recibir un cupón exclusivo del 15% OFF en tu primer producto. Válido una sola vez al ordenar."
+                  )}
+                </p>
+
+                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2.5 sm:gap-3">
+                  {userProfile?.firstPurchaseUsed ? (
+                    <button
+                      onClick={() => setCustomerDrawerOpen(true)}
+                      className="bg-[#B85728] hover:bg-[#9E461D] text-white px-6 py-3 text-xs tracking-[0.2em] font-bold uppercase transition-all duration-300 hover:scale-[1.02] active:scale-[0.98] rounded-xl shadow-md flex items-center gap-2"
+                    >
+                      <Coins size={15} /> VER MIS PUNTOS
+                    </button>
+                  ) : user ? (
+                    <button
+                      onClick={() => setCustomerDrawerOpen(true)}
+                      className="bg-[#B85728] hover:bg-[#9E461D] text-white px-6 py-3 text-xs tracking-[0.2em] font-bold uppercase transition-all duration-300 hover:scale-[1.02] active:scale-[0.98] rounded-xl shadow-md flex items-center gap-2"
+                    >
+                      <Gift size={15} /> VER MI CUPÓN (BIENVENIDA15)
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => openAuthModal("register")}
+                      className="bg-[#B85728] hover:bg-[#9E461D] text-white px-7 py-3 text-xs tracking-[0.2em] font-bold uppercase transition-all duration-300 hover:scale-[1.02] active:scale-[0.98] rounded-xl shadow-md flex items-center gap-2"
+                    >
+                      <Sparkles size={15} /> OBTENER 15% OFF
+                    </button>
+                  )}
+
+                  <span className="text-[10px] text-stone-500 font-medium">
+                    *Aplica en 1 solo producto. 1 uso por cliente.
+                  </span>
+                </div>
+              </div>
+
+              {/* Imagen Estética de Productos / Goteros estilo Serum */}
+              <div className="md:col-span-5 relative h-44 sm:h-56 md:h-full min-h-[190px] md:min-h-[260px] overflow-hidden flex items-center justify-center p-3 sm:p-4">
+                <div className="absolute inset-0 bg-gradient-to-t md:bg-gradient-to-l from-transparent via-transparent to-[#F9EFE7] z-10 hidden md:block"></div>
+                <img 
+                  src="https://images.unsplash.com/photo-1608248543803-ba4f8c70ae0b?q=80&w=800&auto=format&fit=crop" 
+                  alt="15% Descuento Liliana Salon"
+                  className="w-full h-full object-cover object-center rounded-xl md:rounded-none opacity-90 hover:scale-105 transition-transform duration-700" 
+                />
+                <div className="absolute top-4 right-4 bg-white/95 backdrop-blur-sm border border-stone-200 text-stone-900 text-[10px] sm:text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider shadow-sm z-20">
+                  15% OFF
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
+      )}
 
       {/* Categorías Circulares (Scroll suave en móviles) */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full text-center">
@@ -591,8 +593,8 @@ export default function Home() {
                       )}
                     </div>
 
-                    {/* Llamado de bienvenida con 15% OFF */}
-                    {userProfile && !userProfile.firstPurchaseUsed ? (
+                    {/* Llamado de bienvenida con 15% OFF (Solo clientes, no admin) */}
+                    {!isAdmin && userProfile && !userProfile.firstPurchaseUsed ? (
                       <div className="mt-3 pt-3 border-t border-stone-200 flex items-center justify-between text-xs">
                         <span className="text-[#A06C52] font-semibold flex items-center gap-1">
                           <Gift size={13} /> Tu 15% OFF de Bienvenida:
@@ -603,7 +605,7 @@ export default function Home() {
                             : `Q${(getRawPrice(selectedProduct.price, selectedProduct.priceUSD) * 0.85).toFixed(2)}`}
                         </span>
                       </div>
-                    ) : !user ? (
+                    ) : !isAdmin && !user ? (
                       <div className="mt-3 pt-3 border-t border-stone-200 flex items-center justify-between text-xs">
                         <span className="text-stone-600 text-[11px] sm:text-xs">
                           ¿Primera compra? Paga <strong className="text-black font-bold">

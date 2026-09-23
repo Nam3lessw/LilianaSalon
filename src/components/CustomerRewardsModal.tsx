@@ -56,10 +56,16 @@ export default function CustomerRewardsModal() {
     logout 
   } = useAuth();
 
-  const [activeTab, setActiveTab] = useState<"rewards" | "orders">("rewards");
+  const [activeTab, setActiveTab] = useState<"rewards" | "orders">(isAdmin ? "orders" : "rewards");
   const [copied, setCopied] = useState(false);
   const [orders, setOrders] = useState<UserOrder[]>([]);
   const [loadingOrders, setLoadingOrders] = useState(false);
+
+  useEffect(() => {
+    if (isAdmin) {
+      setActiveTab("orders");
+    }
+  }, [isAdmin]);
 
   // Cargar pedidos del usuario cuando se abre el modal
   useEffect(() => {
@@ -147,7 +153,7 @@ export default function CustomerRewardsModal() {
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="text-xl font-serif font-bold text-gray-900 leading-tight">
-                  {userProfile?.name || "Cliente VIP"}
+                  {isAdmin ? (userProfile?.name || "Administrador") : (userProfile?.name || "Cliente VIP")}
                 </h3>
                 {isAdmin && (
                   <span className="bg-amber-100 text-amber-800 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full flex items-center gap-1 border border-amber-300">
@@ -173,36 +179,42 @@ export default function CustomerRewardsModal() {
             </div>
           )}
 
-          {/* Selector de Pestañas: Recompensas vs Historial de Pedidos */}
-          <div className="flex gap-2 mt-4 pt-2">
-            <button
-              onClick={() => setActiveTab("rewards")}
-              className={`flex-1 py-2 px-3 text-xs font-bold uppercase tracking-wider rounded-xl transition flex items-center justify-center gap-1.5 ${
-                activeTab === "rewards"
-                  ? "bg-white text-stone-900 shadow-xs border border-stone-200"
-                  : "text-stone-500 hover:text-stone-900"
-              }`}
-            >
-              <Award size={14} className="text-[#C08261]" /> Mis Puntos & Cupón
-            </button>
-            <button
-              onClick={() => setActiveTab("orders")}
-              className={`flex-1 py-2 px-3 text-xs font-bold uppercase tracking-wider rounded-xl transition flex items-center justify-center gap-1.5 ${
-                activeTab === "orders"
-                  ? "bg-white text-stone-900 shadow-xs border border-stone-200"
-                  : "text-stone-500 hover:text-stone-900"
-              }`}
-            >
-              <ShoppingBag size={14} className="text-[#C08261]" /> Mis Compras ({orders.length})
-            </button>
-          </div>
+          {/* Selector de Pestañas: Solo para clientes normales */}
+          {!isAdmin ? (
+            <div className="flex gap-2 mt-4 pt-2">
+              <button
+                onClick={() => setActiveTab("rewards")}
+                className={`flex-1 py-2 px-3 text-xs font-bold uppercase tracking-wider rounded-xl transition flex items-center justify-center gap-1.5 ${
+                  activeTab === "rewards"
+                    ? "bg-white text-stone-900 shadow-xs border border-stone-200"
+                    : "text-stone-500 hover:text-stone-900"
+                }`}
+              >
+                <Award size={14} className="text-[#C08261]" /> Mis Puntos & Cupón
+              </button>
+              <button
+                onClick={() => setActiveTab("orders")}
+                className={`flex-1 py-2 px-3 text-xs font-bold uppercase tracking-wider rounded-xl transition flex items-center justify-center gap-1.5 ${
+                  activeTab === "orders"
+                    ? "bg-white text-stone-900 shadow-xs border border-stone-200"
+                    : "text-stone-500 hover:text-stone-900"
+                }`}
+              >
+                <ShoppingBag size={14} className="text-[#C08261]" /> Mis Compras ({orders.length})
+              </button>
+            </div>
+          ) : (
+            <div className="mt-3 text-xs font-bold uppercase tracking-wider text-stone-600 flex items-center gap-1.5">
+              <ShoppingBag size={14} className="text-black" /> Historial de Compras ({orders.length})
+            </div>
+          )}
         </div>
 
         {/* Contenido Dinámico de las Pestañas */}
         <div className="flex-1 overflow-y-auto p-5 sm:p-7 space-y-6">
           
-          {/* TAB 1: PUNTOS Y CUPONES */}
-          {activeTab === "rewards" && (
+          {/* TAB 1: PUNTOS Y CUPONES (SOLO CLIENTES, NO ADMIN) */}
+          {!isAdmin && activeTab === "rewards" && (
             <div className="space-y-6">
               {/* Tarjeta de Puntos Acumulados */}
               <div className="bg-gradient-to-br from-[#1C1A17] to-[#2E2A25] text-white p-6 rounded-2xl shadow-lg relative overflow-hidden">
@@ -287,8 +299,27 @@ export default function CustomerRewardsModal() {
           )}
 
           {/* TAB 2: HISTORIAL DE PEDIDOS Y RECIBOS */}
-          {activeTab === "orders" && (
+          {(activeTab === "orders" || isAdmin) && (
             <div className="space-y-4">
+              {isAdmin && (
+                <div className="bg-[#FAF9F7] border border-stone-200 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
+                  <div>
+                    <span className="font-bold text-xs uppercase tracking-wider text-stone-900 block flex items-center gap-1.5">
+                      <Lock size={12} className="text-[#C08261]" /> Modo Administrador
+                    </span>
+                    <p className="text-[11px] text-stone-500 mt-0.5 leading-relaxed">
+                      Esta cuenta administrativa no requiere cupones ni acumula puntos. Tienes acceso completo para gestionar catálogo, pedidos y clientes en el panel.
+                    </p>
+                  </div>
+                  <Link 
+                    href="/admin" 
+                    onClick={() => setCustomerDrawerOpen(false)}
+                    className="bg-black text-white px-3 py-1.5 rounded-lg text-xs font-semibold uppercase tracking-wider hover:bg-stone-800 transition flex items-center gap-1.5 whitespace-nowrap self-end sm:self-auto shadow-xs"
+                  >
+                    Panel Admin <ExternalLink size={12} />
+                  </Link>
+                </div>
+              )}
               {loadingOrders ? (
                 <div className="py-12 flex flex-col items-center justify-center space-y-2 text-stone-500 text-xs">
                   <Loader2 size={24} className="animate-spin text-[#C08261]" />
@@ -391,12 +422,14 @@ export default function CustomerRewardsModal() {
                             <span className="text-[#A8623D]">{symbol}{o.total?.toFixed(2)} {o.currency}</span>
                           </div>
 
-                          <div className="flex justify-between text-[11px] text-stone-500 pt-0.5">
-                            <span className="flex items-center gap-1">
-                              <Coins size={11} className="text-[#C08261]" /> Puntos conseguidos:
-                            </span>
-                            <span className="font-bold text-stone-800">+{o.pointsEarned} pts</span>
-                          </div>
+                          {!isAdmin && o.pointsEarned > 0 && (
+                            <div className="flex justify-between text-[11px] text-stone-500 pt-0.5">
+                              <span className="flex items-center gap-1">
+                                <Coins size={11} className="text-[#C08261]" /> Puntos conseguidos:
+                              </span>
+                              <span className="font-bold text-stone-800">+{o.pointsEarned} pts</span>
+                            </div>
+                          )}
                         </div>
 
                         {/* Enlace para ver/imprimir recibo oficial */}

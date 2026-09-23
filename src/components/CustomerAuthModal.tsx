@@ -48,7 +48,7 @@ export default function CustomerAuthModal() {
           await updateProfile(userCred.user, { displayName: name.trim() });
         }
 
-        // Create user document with 50 points and 15% coupon
+        // Create user document with 50 points and 15% coupon for customers, no coupon or points for admin
         if (db) {
           const isPotentialAdmin = email.toLowerCase().includes("admin") || email.toLowerCase().includes("liliana");
           await setDoc(doc(db, "users", userCred.user.uid), {
@@ -56,14 +56,18 @@ export default function CustomerAuthModal() {
             name: name.trim() || email.split("@")[0],
             email: email.trim(),
             role: isPotentialAdmin ? "admin" : "customer",
-            points: isPotentialAdmin ? 0 : 50, // 50 puntos de bienvenida
-            welcomeCoupon: "BIENVENIDA15",
-            firstPurchaseUsed: false,
+            points: isPotentialAdmin ? 0 : 50, // 50 puntos para clientes, 0 para admin
+            welcomeCoupon: isPotentialAdmin ? null : "BIENVENIDA15",
+            firstPurchaseUsed: isPotentialAdmin ? true : false,
             createdAt: serverTimestamp()
           });
         }
 
-        setSuccessMsg("¡Felicidades! Tu cuenta fue creada. Recibiste tu cupón de 15% OFF y 50 Puntos.");
+        setSuccessMsg(
+          (email.toLowerCase().includes("admin") || email.toLowerCase().includes("liliana"))
+            ? "¡Cuenta de Administrador creada exitosamente!"
+            : "¡Felicidades! Tu cuenta fue creada. Recibiste tu cupón de 15% OFF y 50 Puntos."
+        );
         await refreshProfile();
         setTimeout(() => {
           closeAuthModal();

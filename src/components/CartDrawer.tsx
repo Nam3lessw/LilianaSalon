@@ -44,7 +44,7 @@ export default function CartDrawer() {
   } = useCart();
 
   const { country, countryName } = useCountry();
-  const { user, userProfile, openAuthModal } = useAuth();
+  const { user, userProfile, isAdmin, openAuthModal } = useAuth();
   const router = useRouter();
 
   // Datos para clientes invitados
@@ -100,7 +100,7 @@ export default function CartDrawer() {
           ? (userProfile?.welcomeCoupon || "BIENVENIDA15")
           : null,
         total,
-        pointsEarned: pointsToEarn,
+        pointsEarned: isAdmin ? 0 : pointsToEarn,
         status: "pendiente", // "pendiente" | "completada" | "cancelada"
         notes: deliveryNotes.trim() || "",
         createdAt: serverTimestamp()
@@ -125,8 +125,12 @@ export default function CartDrawer() {
         .map(i => `* ${i.quantity}x ${i.productName}${i.volume ? ` (${i.volume})` : ""} — ${symbol}${i.totalPrice.toFixed(2)}`)
         .join("\n");
 
-      const couponLine = (canApplyWelcomeCoupon && applyWelcomeCoupon && discount > 0)
+      const couponLine = (!isAdmin && canApplyWelcomeCoupon && applyWelcomeCoupon && discount > 0)
         ? `\nCupón 1er producto (15%): -${symbol}${discount.toFixed(2)}`
+        : "";
+
+      const pointsLine = (!isAdmin && pointsToEarn > 0)
+        ? `\nPuntos a ganar: +${pointsToEarn} pts`
         : "";
 
       const notesLine = deliveryNotes.trim() ? `\nNota: ${deliveryNotes.trim()}` : "";
@@ -137,8 +141,8 @@ export default function CartDrawer() {
         `Deseo realizar el pedido #${orderNumber}:\n\n` +
         `${itemsListText}\n` +
         `${couponLine}\n` +
-        `TOTAL OFICIAL: ${symbol}${total.toFixed(2)} ${currencyCode}\n` +
-        `Puntos a ganar: +${pointsToEarn} pts${notesLine}\n\n` +
+        `TOTAL OFICIAL: ${symbol}${total.toFixed(2)} ${currencyCode}` +
+        `${pointsLine}${notesLine}\n\n` +
         `Verificar pedido oficial:\n` +
         `${verificationUrl}\n\n` +
         `¿Me podrían indicar los datos para realizar la transferencia/pago y coordinar el envío? Muchas gracias.`;
@@ -308,50 +312,52 @@ export default function CartDrawer() {
                 })}
               </div>
 
-              {/* Banner de Cupón 15% OFF */}
-              {canApplyWelcomeCoupon ? (
-                <div className="bg-[#F8EFE7] border border-[#E7D0BD] rounded-2xl p-3.5 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-[#A8623D] flex items-center gap-1.5">
-                      <Gift size={14} /> Cupón de Bienvenida (15% OFF)
-                    </span>
-                    <label className="flex items-center cursor-pointer gap-1.5">
-                      <input 
-                        type="checkbox" 
-                        checked={applyWelcomeCoupon} 
-                        onChange={(e) => setApplyWelcomeCoupon(e.target.checked)}
-                        className="w-4 h-4 text-[#A8623D] rounded border-stone-300 focus:ring-[#A8623D]"
-                      />
-                      <span className="text-[11px] font-semibold text-stone-800">Aplicar</span>
-                    </label>
+              {/* Banner de Cupón 15% OFF (Solo clientes, no admin) */}
+              {!isAdmin && (
+                canApplyWelcomeCoupon ? (
+                  <div className="bg-[#F8EFE7] border border-[#E7D0BD] rounded-2xl p-3.5 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-[#A8623D] flex items-center gap-1.5">
+                        <Gift size={14} /> Cupón de Bienvenida (15% OFF)
+                      </span>
+                      <label className="flex items-center cursor-pointer gap-1.5">
+                        <input 
+                          type="checkbox" 
+                          checked={applyWelcomeCoupon} 
+                          onChange={(e) => setApplyWelcomeCoupon(e.target.checked)}
+                          className="w-4 h-4 text-[#A8623D] rounded border-stone-300 focus:ring-[#A8623D]"
+                        />
+                        <span className="text-[11px] font-semibold text-stone-800">Aplicar</span>
+                      </label>
+                    </div>
+                    <p className="text-[11px] text-stone-600 leading-tight">
+                      Aplica automáticamente al producto de mayor valor ({couponDiscountItem?.name}): <strong className="text-[#A8623D]">-{currencySymbol}{discount.toFixed(2)}</strong>.
+                    </p>
                   </div>
-                  <p className="text-[11px] text-stone-600 leading-tight">
-                    Aplica automáticamente al producto de mayor valor ({couponDiscountItem?.name}): <strong className="text-[#A8623D]">-{currencySymbol}{discount.toFixed(2)}</strong>.
-                  </p>
-                </div>
-              ) : !user ? (
-                <div className="bg-[#FAF6F2] border border-stone-200 rounded-2xl p-3 flex items-center justify-between text-xs">
-                  <div>
-                    <span className="font-semibold text-gray-900 block text-[11px]">
-                      ¿Es tu primera compra?
-                    </span>
-                    <span className="text-[10px] text-stone-500">
-                      Crea tu cuenta para aplicar 15% OFF en 1 producto.
-                    </span>
+                ) : !user ? (
+                  <div className="bg-[#FAF6F2] border border-stone-200 rounded-2xl p-3 flex items-center justify-between text-xs">
+                    <div>
+                      <span className="font-semibold text-gray-900 block text-[11px]">
+                        ¿Es tu primera compra?
+                      </span>
+                      <span className="text-[10px] text-stone-500">
+                        Crea tu cuenta para aplicar 15% OFF en 1 producto.
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => openAuthModal("register")}
+                      className="text-[11px] font-bold text-[#B85728] underline hover:text-black transition"
+                    >
+                      Crear cuenta
+                    </button>
                   </div>
-                  <button
-                    onClick={() => openAuthModal("register")}
-                    className="text-[11px] font-bold text-[#B85728] underline hover:text-black transition"
-                  >
-                    Crear cuenta
-                  </button>
-                </div>
-              ) : userProfile?.firstPurchaseUsed ? (
-                <div className="bg-stone-50 border border-stone-200 rounded-xl p-2.5 text-[11px] text-stone-500 flex items-center gap-1.5">
-                  <Coins size={13} className="text-[#C08261]" />
-                  <span>Tu cupón ya fue utilizado. ¡Esta compra te suma <strong>+{pointsToEarn} puntos VIP</strong>!</span>
-                </div>
-              ) : null}
+                ) : userProfile?.firstPurchaseUsed ? (
+                  <div className="bg-stone-50 border border-stone-200 rounded-xl p-2.5 text-[11px] text-stone-500 flex items-center gap-1.5">
+                    <Coins size={13} className="text-[#C08261]" />
+                    <span>Tu cupón ya fue utilizado. ¡Esta compra te suma <strong>+{pointsToEarn} puntos VIP</strong>!</span>
+                  </div>
+                ) : null
+              )}
 
               {/* Información del Cliente */}
               <div className="pt-2 border-t border-stone-100 space-y-2">
@@ -428,12 +434,14 @@ export default function CartDrawer() {
                 <span className="text-[#A8623D]">{currencySymbol}{total.toFixed(2)} {currencyCode}</span>
               </div>
 
-              <div className="flex items-center justify-between text-[11px] text-stone-500 pt-0.5">
-                <span className="flex items-center gap-1">
-                  <Coins size={12} className="text-[#C08261]" /> Puntos VIP que acumulas:
-                </span>
-                <span className="font-bold text-stone-800">+{pointsToEarn} pts</span>
-              </div>
+              {!isAdmin && pointsToEarn > 0 && (
+                <div className="flex items-center justify-between text-[11px] text-stone-500 pt-0.5">
+                  <span className="flex items-center gap-1">
+                    <Coins size={12} className="text-[#C08261]" /> Puntos VIP que acumulas:
+                  </span>
+                  <span className="font-bold text-stone-800">+{pointsToEarn} pts</span>
+                </div>
+              )}
             </div>
 
             <button

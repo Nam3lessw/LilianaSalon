@@ -316,7 +316,11 @@ export default function AdminDashboard() {
       // 2. Cargar clientes registrados
       const usersSnap = await getDocs(collection(db, "users"));
       const userList = usersSnap.docs.map(d => ({ id: d.id, ...d.data() } as CustomerUser));
-      setCustomers(userList.filter(u => u.role !== "admin"));
+      setCustomers(userList.filter(u => 
+        u.role !== "admin" && 
+        !u.email?.toLowerCase().includes("admin") && 
+        !u.email?.toLowerCase().includes("liliana")
+      ));
     } catch (err) {
       console.error("Error fetching loyalty data", err);
     }

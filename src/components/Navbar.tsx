@@ -26,7 +26,7 @@ export default function Navbar() {
         <div className="flex items-center gap-1.5 mx-auto sm:mx-0">
           <Sparkles size={12} className="text-[#C08261] flex-shrink-0" />
           <span className="truncate">
-            Envíos en <strong className="font-semibold text-black">Guatemala 🇬🇹 & El Salvador 🇸🇻</strong> • -15% en tu 1ra compra
+            Envíos en <strong className="font-semibold text-black">Guatemala 🇬🇹 & El Salvador 🇸🇻</strong> {!isAdmin && "• -15% en tu 1ra compra"}
           </span>
           {!user && (
             <button
@@ -106,14 +106,16 @@ export default function Navbar() {
           <div className="flex items-center space-x-2 sm:space-x-3">
             {user ? (
               <div className="flex items-center gap-1.5 sm:gap-2">
-                {/* Botón de Puntos */}
-                <button
-                  onClick={() => setCustomerDrawerOpen(true)}
-                  className="bg-[#FAF3EC] border border-stone-200 hover:border-[#C08261] text-stone-800 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-full text-[11px] sm:text-xs font-semibold flex items-center gap-1 transition shadow-xs"
-                >
-                  <Award size={13} className="text-[#C08261]" />
-                  <span>{userProfile?.points || 0} pts</span>
-                </button>
+                {/* Botón de Puntos (Solo para clientes) */}
+                {!isAdmin && (
+                  <button
+                    onClick={() => setCustomerDrawerOpen(true)}
+                    className="bg-[#FAF3EC] border border-stone-200 hover:border-[#C08261] text-stone-800 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-full text-[11px] sm:text-xs font-semibold flex items-center gap-1 transition shadow-xs"
+                  >
+                    <Award size={13} className="text-[#C08261]" />
+                    <span>{userProfile?.points || 0} pts</span>
+                  </button>
+                )}
 
                 {/* Acceso Admin */}
                 {isAdmin && (

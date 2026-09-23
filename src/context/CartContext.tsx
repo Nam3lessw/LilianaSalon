@@ -49,7 +49,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const [initialized, setInitialized] = useState(false);
 
   const { country, currencySymbol } = useCountry();
-  const { user, userProfile } = useAuth();
+  const { user, userProfile, isAdmin } = useAuth();
 
   // Cargar carrito de localStorage
   useEffect(() => {
@@ -137,8 +137,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     items.reduce((sum, item) => sum + getItemUnitPrice(item) * item.quantity, 0)
   );
 
-  // Regla del cupón: solo aplica si el usuario no lo ha usado antes
-  const canApplyWelcomeCoupon = Boolean(userProfile && !userProfile.firstPurchaseUsed && items.length > 0);
+  // Regla del cupón: solo aplica si el usuario no es admin y no lo ha usado antes
+  const canApplyWelcomeCoupon = Boolean(!isAdmin && userProfile && !userProfile.firstPurchaseUsed && items.length > 0);
 
   // Encontrar el producto más valioso para aplicar el 15% estrictamente a 1 unidad
   let couponDiscountItem: CartItem | null = null;
@@ -160,10 +160,10 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   const total = roundToCommercialPrice(Math.max(0, subtotal - discount));
 
-  // Puntos ganados con la compra
-  const pointsToEarn = country === "GT"
+  // Puntos ganados con la compra (Admin no acumula puntos)
+  const pointsToEarn = isAdmin ? 0 : (country === "GT"
     ? Math.floor(total / 10)
-    : Math.floor(total / 1.25);
+    : Math.floor(total / 1.25));
 
   return (
     <CartContext.Provider
