@@ -7,6 +7,8 @@ import { AuthProvider } from "@/context/AuthContext";
 import { CountryProvider } from "@/context/CountryContext";
 import CustomerAuthModal from "@/components/CustomerAuthModal";
 import CustomerRewardsModal from "@/components/CustomerRewardsModal";
+import { CartProvider } from "@/context/CartContext";
+import CartDrawer from "@/components/CartDrawer";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -25,13 +27,16 @@ export default function RootLayout({
       <body className={`${inter.className} min-h-screen bg-[#FFFDFB] text-gray-900 flex flex-col antialiased`}>
         <AuthProvider>
           <CountryProvider>
-            <Navbar />
-            <main className="flex-grow">
-              {children}
-            </main>
-            <WhatsAppButton />
-            <CustomerAuthModal />
-            <CustomerRewardsModal />
+            <CartProvider>
+              <Navbar />
+              <main className="flex-grow">
+                {children}
+              </main>
+              <WhatsAppButton />
+              <CustomerAuthModal />
+              <CustomerRewardsModal />
+              <CartDrawer />
+            </CartProvider>
           </CountryProvider>
         </AuthProvider>
       </body>

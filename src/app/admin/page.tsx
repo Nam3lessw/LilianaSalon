@@ -9,7 +9,8 @@ import {
   updateDoc, 
   serverTimestamp, 
   getDoc, 
-  setDoc 
+  setDoc,
+  increment 
 } from "firebase/firestore";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
@@ -38,6 +39,8 @@ import {
   Printer,
   Send,
   ShoppingBag,
+  Clock,
+  ExternalLink,
   RotateCcw,
   Check,
   AlertCircle,
@@ -109,6 +112,7 @@ export interface OrderReceipt {
   total: number;
   paymentMethod: string;
   pointsEarned: number;
+  status?: "pendiente" | "completada" | "cancelada";
   notes?: string;
   createdAt: any;
 }
@@ -355,6 +359,62 @@ export default function AdminDashboard() {
     );
   };
 
+  const handleMarkOrderCompleted = async (order: OrderReceipt) => {
+    if (!db || !order.id) return;
+    try {
+      const orderRef = doc(db, "orders", order.id);
+      await updateDoc(orderRef, {
+        status: "completada",
+        confirmedAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+
+      // Si cliente registrado: quemar cupón y dar puntos
+      if (order.customerId && order.customerId !== "manual" && order.customerId !== "guest") {
+        try {
+          const userRef = doc(db, "users", order.customerId);
+          const updates: any = {
+            points: increment(order.pointsEarned || 0),
+            updatedAt: serverTimestamp()
+          };
+          if (order.couponApplied) {
+            updates.firstPurchaseUsed = true;
+          }
+          await updateDoc(userRef, updates);
+          setCustomers(prev => prev.map(c => c.id === order.customerId ? { 
+            ...c, 
+            points: (c.points || 0) + (order.pointsEarned || 0), 
+            firstPurchaseUsed: order.couponApplied ? true : c.firstPurchaseUsed 
+          } : c));
+        } catch (uErr) {
+          console.warn("Could not update user points or coupon", uErr);
+        }
+      }
+
+      // Descontar inventario de cada producto
+      for (const item of order.items || []) {
+        if (item.productId) {
+          try {
+            await updateDoc(doc(db, "products", item.productId), {
+              stock: increment(-item.quantity)
+            });
+          } catch (pErr) {
+            console.warn(`Could not decrement stock for product ${item.productId}`, pErr);
+          }
+        }
+      }
+
+      setOrders(prev => prev.map(o => o.id === order.id ? { ...o, status: "completada" } : o));
+      setStatusMessage({ 
+        type: "success", 
+        text: `¡Pedido #${order.orderNumber} marcado como Compra Efectuada exitosamente! Puntos acreditados e inventario actualizado.` 
+      });
+    } catch (err: any) {
+      console.error("Error marking completed", err);
+      setStatusMessage({ type: "error", text: "Error al marcar como completado: " + err.message });
+    }
+  };
+
   const handleCreateOrder = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedProductId) {
@@ -415,6 +475,7 @@ export default function AdminDashboard() {
         total,
         paymentMethod,
         pointsEarned,
+        status: "completada",
         notes: orderNotes,
         createdAt: new Date().toISOString()
       };
@@ -1562,6 +1623,7 @@ export default function AdminDashboard() {
                         <th className="py-3 px-2">Cliente</th>
                         <th className="py-3 px-2">Producto(s)</th>
                         <th className="py-3 px-2">Total</th>
+                        <th className="py-3 px-2 text-center">Estado</th>
                         <th className="py-3 px-2 text-center">15% Usado</th>
                         <th className="py-3 px-2 text-right">Acción</th>
                       </tr>
@@ -1577,6 +1639,8 @@ export default function AdminDashboard() {
                         })
                         .map((order) => {
                           const symbol = order.currency === "GTQ" ? "Q" : "$";
+                          const isCompleted = order.status === "completada";
+
                           return (
                             <tr key={order.id || order.orderNumber} className="hover:bg-stone-50/70 transition">
                               <td className="py-3 px-2 font-mono text-xs font-bold text-gray-900">
@@ -1597,6 +1661,17 @@ export default function AdminDashboard() {
                                 {symbol}{order.total?.toFixed(2)}
                               </td>
                               <td className="py-3 px-2 text-center text-xs">
+                                {isCompleted ? (
+                                  <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                                    <CheckCircle2 size={10} /> Efectuada
+                                  </span>
+                                ) : (
+                                  <span className="bg-amber-100 text-amber-900 text-[10px] font-bold px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                                    <Clock size={10} className="animate-pulse" /> Pendiente
+                                  </span>
+                                )}
+                              </td>
+                              <td className="py-3 px-2 text-center text-xs">
                                 {order.couponApplied ? (
                                   <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full inline-flex items-center gap-1">
                                     <Check size={10} /> 15% OFF
@@ -1606,12 +1681,34 @@ export default function AdminDashboard() {
                                 )}
                               </td>
                               <td className="py-3 px-2 text-right">
-                                <button
-                                  onClick={() => setActiveReceipt(order)}
-                                  className="text-xs bg-stone-100 hover:bg-black hover:text-white px-2.5 py-1.5 rounded-lg font-semibold transition inline-flex items-center gap-1 shadow-2xs"
-                                >
-                                  <Printer size={13} /> Ver Recibo
-                                </button>
+                                <div className="inline-flex items-center gap-1.5 justify-end">
+                                  {!isCompleted && (
+                                    <button
+                                      onClick={() => handleMarkOrderCompleted(order)}
+                                      className="text-xs bg-[#25D366] hover:bg-[#20ba59] active:scale-95 text-stone-950 px-2.5 py-1.5 rounded-lg font-bold transition inline-flex items-center gap-1 shadow-2xs"
+                                      title="Marcar pago verificado y otorgar puntos"
+                                    >
+                                      <CheckCircle2 size={12} /> Compra Efectuada
+                                    </button>
+                                  )}
+                                  <button
+                                    onClick={() => setActiveReceipt(order)}
+                                    className="text-xs bg-stone-100 hover:bg-black hover:text-white px-2.5 py-1.5 rounded-lg font-semibold transition inline-flex items-center gap-1 shadow-2xs"
+                                  >
+                                    <Printer size={13} /> Recibo
+                                  </button>
+                                  {order.id && (
+                                    <a
+                                      href={`/pedido/${order.id}`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-xs bg-stone-100 hover:bg-stone-200 text-stone-700 px-2 py-1.5 rounded-lg transition inline-flex items-center"
+                                      title="Verificar enlace oficial en web"
+                                    >
+                                      <ExternalLink size={12} />
+                                    </a>
+                                  )}
+                                </div>
                               </td>
                             </tr>
                           );

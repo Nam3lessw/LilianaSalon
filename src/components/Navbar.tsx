@@ -1,8 +1,9 @@
 "use client";
 import Link from "next/link";
-import { User, Gift, Award, Lock, Sparkles, Globe, ChevronDown } from "lucide-react";
+import { User, Gift, Award, Lock, Sparkles, Globe, ChevronDown, ShoppingBag } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useCountry } from "@/context/CountryContext";
+import { useCart } from "@/context/CartContext";
 import { useState } from "react";
 
 export default function Navbar() {
@@ -15,6 +16,7 @@ export default function Navbar() {
   } = useAuth();
 
   const { country, setCountry, countryFlag, currencySymbol } = useCountry();
+  const { setIsCartOpen, totalItems } = useCart();
   const [countryMenuOpen, setCountryMenuOpen] = useState(false);
 
   return (
@@ -150,6 +152,21 @@ export default function Navbar() {
                 </button>
               </div>
             )}
+
+            {/* Botón Bolsa de Compras */}
+            <button
+              onClick={() => setIsCartOpen(true)}
+              className="relative p-2 sm:p-2.5 rounded-full bg-stone-50 hover:bg-[#FAF3EC] text-stone-800 border border-stone-200 transition shadow-2xs hover:scale-105 active:scale-95"
+              aria-label="Ver bolsa de compras"
+              title="Mi Bolsa de Compras"
+            >
+              <ShoppingBag size={18} className="text-stone-800" />
+              {totalItems > 0 && (
+                <span className="absolute -top-1 -right-1 bg-[#B85728] text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center shadow-xs animate-in zoom-in">
+                  {totalItems}
+                </span>
+              )}
+            </button>
           </div>
         </div>
 

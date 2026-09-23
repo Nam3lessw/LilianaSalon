@@ -4,18 +4,21 @@ import { useEffect, useState } from "react";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { Product } from "./admin/page";
-import { MessageCircle, X, Sparkles, Check, Package, Eye, ArrowRight, ShieldCheck, Gift, MapPin, Coins } from "lucide-react";
+import { MessageCircle, X, Sparkles, Check, Package, Eye, ArrowRight, ShieldCheck, Gift, MapPin, Coins, ShoppingBag, Plus, Minus } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useCountry } from "@/context/CountryContext";
+import { useCart } from "@/context/CartContext";
 
 export default function Home() {
   const { user, userProfile, openAuthModal, setCustomerDrawerOpen } = useAuth();
   const { country, currency, currencySymbol, countryName, countryFlag, formatPrice, getRawPrice } = useCountry();
+  const { addToCart, setIsCartOpen, totalItems, total } = useCart();
 
   const [products, setProducts] = useState<Product[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>("TODOS");
   const [loading, setLoading] = useState(true);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [modalQty, setModalQty] = useState(1);
 
   const phoneNumber = "50242083721";
 
@@ -122,17 +125,17 @@ export default function Home() {
     const volumeText = product.volume ? ` (${product.volume})` : "";
     const rawPrice = getRawPrice(product.price, product.priceUSD);
     const formattedPrice = formatPrice(product.price, product.priceUSD);
-    const countryLabel = country === "GT" ? "Guatemala 🇬🇹" : "El Salvador 🇸🇻";
+    const destinationCountry = countryName; // "Guatemala" o "El Salvador" sin banderas Unicode rotas
     let text = "";
 
     if (userProfile && !userProfile.firstPurchaseUsed) {
       const discountPrice = (rawPrice * 0.85).toFixed(2);
       const discountFormatted = country === "SV" ? `$${discountPrice} USD` : `Q${discountPrice}`;
-      text = `¡Hola Liliana Salon! Soy ${userProfile.name} desde ${countryLabel}. Me interesa comprar: *${product.name}*${volumeText}. Deseo aplicar mi cupón del 15% OFF (${userProfile.welcomeCoupon}), precio con descuento: *${discountFormatted}*. Cuento con ${userProfile.points} puntos acumulados.`;
+      text = `¡Hola Liliana Salon! 👋 Soy ${userProfile.name} desde ${destinationCountry}.\nMe interesa comprar: *${product.name}*${volumeText}.\n🎁 Cupón 15% (BIENVENIDA15): *${discountFormatted}*.\n¿Tienen disponibilidad para envío? ✨`;
     } else if (userProfile) {
-      text = `¡Hola Liliana Salon! Soy ${userProfile.name} desde ${countryLabel}. Me interesa ordenar: *${product.name}*${volumeText} por *${formattedPrice}*. Cuento con ${userProfile.points} puntos acumulados.`;
+      text = `¡Hola Liliana Salon! 👋 Soy ${userProfile.name} desde ${destinationCountry}.\nMe interesa ordenar: *${product.name}*${volumeText} por *${formattedPrice}*.\n¿Tienen disponibilidad para envío? ✨`;
     } else {
-      text = `¡Hola Liliana Salon! Me interesa comprar desde ${countryLabel} el producto: *${product.name}*${volumeText} por *${formattedPrice}*. ¿Tienen disponibilidad y servicio de entrega?`;
+      text = `¡Hola Liliana Salon! 👋 Me interesa adquirir desde ${destinationCountry}: *${product.name}*${volumeText} por *${formattedPrice}*.\n¿Tienen disponibilidad y servicio de entrega? ✨`;
     }
 
     return `https://wa.me/${phoneNumber}?text=${encodeURIComponent(text)}`;
@@ -432,16 +435,28 @@ export default function Home() {
                       )}
                     </div>
 
-                    {/* Botón WhatsApp de compra rápida */}
-                    <a
-                      href={getWhatsAppProductLink(product)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="w-full border border-stone-900 bg-white hover:bg-stone-900 hover:text-white text-stone-900 py-2 sm:py-2.5 px-2 rounded-xl text-[10px] sm:text-xs font-semibold tracking-wider uppercase flex items-center justify-center gap-1.5 transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] shadow-xs hover:shadow-md"
-                    >
-                      <MessageCircle size={13} className="text-[#25D366] flex-shrink-0" />
-                      <span className="truncate">Pedir por WhatsApp</span>
-                    </a>
+                    {/* Botones de Acción: Carrito y WhatsApp Directo */}
+                    <div className="grid grid-cols-2 gap-1.5 sm:gap-2">
+                      <button
+                        onClick={() => addToCart(product, 1)}
+                        className="bg-black hover:bg-stone-800 text-white py-2 sm:py-2.5 px-1.5 sm:px-2 rounded-xl text-[10px] sm:text-xs font-semibold tracking-wider uppercase flex items-center justify-center gap-1 transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] shadow-xs"
+                        title="Añadir a mi bolsa de compras"
+                      >
+                        <ShoppingBag size={12} className="flex-shrink-0" />
+                        <span className="truncate">Bolsa</span>
+                      </button>
+
+                      <a
+                        href={getWhatsAppProductLink(product)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="border border-stone-200 hover:border-black bg-white hover:bg-stone-50 text-stone-900 py-2 sm:py-2.5 px-1.5 sm:px-2 rounded-xl text-[10px] sm:text-xs font-semibold tracking-wider uppercase flex items-center justify-center gap-1 transition-all duration-200"
+                        title="Pedir directo por WhatsApp"
+                      >
+                        <MessageCircle size={12} className="text-[#25D366] flex-shrink-0" />
+                        <span className="truncate">Pedir</span>
+                      </a>
+                    </div>
                   </div>
                 </div>
               );
@@ -634,19 +649,54 @@ export default function Home() {
                   </div>
                 </div>
 
-                {/* Botón WhatsApp de Acción */}
-                <div className="space-y-2.5 pt-3 sm:pt-4 border-t border-stone-100">
+                {/* Botones de Acción en el Modal: Carrito y WhatsApp Directo */}
+                <div className="space-y-3 pt-3 sm:pt-4 border-t border-stone-100">
+                  <div className="flex items-center gap-3">
+                    {/* Selector de Cantidad */}
+                    <div className="flex items-center border border-stone-200 rounded-xl bg-[#FAF9F7] p-1">
+                      <button
+                        onClick={() => setModalQty(Math.max(1, modalQty - 1))}
+                        className="w-8 h-8 rounded-lg bg-white hover:bg-stone-100 text-stone-700 flex items-center justify-center transition shadow-2xs"
+                        aria-label="Menos"
+                      >
+                        <Minus size={14} />
+                      </button>
+                      <span className="w-8 text-center text-xs font-bold text-gray-900">
+                        {modalQty}
+                      </span>
+                      <button
+                        onClick={() => setModalQty(modalQty + 1)}
+                        className="w-8 h-8 rounded-lg bg-white hover:bg-stone-100 text-stone-700 flex items-center justify-center transition shadow-2xs"
+                        aria-label="Más"
+                      >
+                        <Plus size={14} />
+                      </button>
+                    </div>
+
+                    {/* Botón Añadir a la Bolsa */}
+                    <button
+                      onClick={() => {
+                        addToCart(selectedProduct, modalQty);
+                        setSelectedProduct(null);
+                        setModalQty(1);
+                      }}
+                      className="flex-1 bg-black hover:bg-stone-800 text-white py-3.5 px-4 rounded-xl text-xs sm:text-sm font-bold uppercase tracking-wider flex items-center justify-center gap-2 shadow-md hover:scale-[1.01] active:scale-[0.99] transition-all"
+                    >
+                      <ShoppingBag size={16} /> Añadir a la Bolsa
+                    </button>
+                  </div>
+
                   <a
                     href={getWhatsAppProductLink(selectedProduct)}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="w-full bg-[#25D366] hover:bg-[#20ba59] hover:scale-[1.01] active:scale-[0.99] text-white py-3.5 sm:py-4 px-4 sm:px-6 rounded-xl text-xs sm:text-sm font-semibold tracking-wider uppercase flex items-center justify-center gap-2.5 shadow-md hover:shadow-xl transition-all duration-200"
+                    className="w-full border border-stone-300 hover:border-black bg-white hover:bg-stone-50 text-stone-900 py-3 px-4 rounded-xl text-xs font-semibold tracking-wider uppercase flex items-center justify-center gap-2 transition-all duration-200"
                   >
-                    <MessageCircle size={18} /> Pedir por WhatsApp ({countryName})
+                    <MessageCircle size={16} className="text-[#25D366]" /> Pedir por WhatsApp ({countryName})
                   </a>
                   <p className="text-[10px] sm:text-[11px] text-stone-400 text-center flex items-center justify-center gap-1">
                     <ShieldCheck size={13} className="text-stone-400" />
-                    Envíos a toda Guatemala 🇬🇹 y El Salvador 🇸🇻 • Pagos seguros
+                    Envíos en Guatemala y El Salvador • Pagos seguros
                   </p>
                 </div>
               </div>
@@ -670,6 +720,28 @@ export default function Home() {
           </p>
         </div>
       </footer>
+
+      {/* Botón Flotante de Bolsa de Compras cuando hay productos */}
+      {totalItems > 0 && (
+        <div className="fixed bottom-5 left-5 sm:bottom-7 sm:left-7 z-40 animate-in slide-in-from-bottom duration-300">
+          <button
+            onClick={() => setIsCartOpen(true)}
+            className="bg-stone-900 hover:bg-black text-white px-4 py-3 sm:px-5 sm:py-3.5 rounded-full shadow-2xl flex items-center gap-2.5 text-xs sm:text-sm font-bold uppercase tracking-wider hover:scale-105 active:scale-95 transition-all border border-stone-700"
+            aria-label="Ver bolsa de compras"
+          >
+            <div className="relative">
+              <ShoppingBag size={18} className="text-[#E0A98B]" />
+              <span className="absolute -top-2 -right-2 bg-[#B85728] text-white text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
+                {totalItems}
+              </span>
+            </div>
+            <span>Ver Bolsa</span>
+            <span className="bg-white/20 text-white px-2 py-0.5 rounded-full text-[11px] font-medium ml-0.5">
+              {currencySymbol}{total.toFixed(2)}
+            </span>
+          </button>
+        </div>
+      )}
     </div>
   );
 }
