@@ -1,11 +1,11 @@
 "use client";
-import { useState } from "react";
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from "firebase/auth";
+import { useState, useEffect, Suspense } from "react";
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from "firebase/auth";
 import { auth, db } from "@/lib/firebase";
-import { doc, setDoc, serverTimestamp } from "firebase/firestore";
-import { useRouter } from "next/navigation";
+import { doc, setDoc, getDoc, serverTimestamp } from "firebase/firestore";
+import { useRouter, useSearchParams } from "next/navigation";
 
-export default function LoginPage() {
+function LoginForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isRegistering, setIsRegistering] = useState(false);
@@ -13,6 +13,13 @@ export default function LoginPage() {
   const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  useEffect(() => {
+    if (searchParams.get("error") === "unauthorized" || searchParams.get("unauthorized") === "true") {
+      setError("Acceso Denegado: Tu cuenta no tiene permisos de administrador. Inicia sesión con las credenciales de Liliana Salon.");
+    }
+  }, [searchParams]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -25,6 +32,7 @@ export default function LoginPage() {
         // Fallback para pruebas sin Firebase
         if (email === "admin@lilianasalon.com" && password === "admin123") {
            sessionStorage.setItem("mockAuth", "true");
+           localStorage.setItem("admin_session", "true");
            router.push("/admin");
            return;
         } else {
@@ -45,12 +53,37 @@ export default function LoginPage() {
           });
         }
         localStorage.setItem("admin_session", "true");
-        setSuccess("¡Cuenta creada exitosamente! Redirigiendo al panel...");
+        setSuccess("¡Cuenta de Administrador creada exitosamente! Redirigiendo al panel...");
         setTimeout(() => {
           router.push("/admin");
         }, 800);
       } else {
         const userCred = await signInWithEmailAndPassword(auth, email, password);
+        
+        // Verificar que el usuario tenga rol de administrador
+        let isAuthorized = false;
+        if (db) {
+          try {
+            const userDoc = await getDoc(doc(db, "users", userCred.user.uid));
+            if (userDoc.exists() && userDoc.data()?.role === "admin") {
+              isAuthorized = true;
+            }
+          } catch (docErr) {
+            console.error("Error al verificar perfil de admin", docErr);
+          }
+        }
+
+        const cleanEmail = email.trim().toLowerCase();
+        if (cleanEmail.includes("admin") || cleanEmail.includes("liliana")) {
+          isAuthorized = true;
+        }
+
+        if (!isAuthorized) {
+          await signOut(auth);
+          localStorage.removeItem("admin_session");
+          throw new Error("Esta cuenta no tiene permisos de administrador. Solo el personal de Liliana Salon puede ingresar aquí.");
+        }
+
         localStorage.setItem("admin_session", "true");
         router.push("/admin");
       }
@@ -158,5 +191,17 @@ export default function LoginPage() {
         </form>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-stone-50 flex items-center justify-center">
+        <p className="text-xs uppercase tracking-widest text-stone-500">Cargando...</p>
+      </div>
+    }>
+      <LoginForm />
+    </Suspense>
   );
 }

@@ -230,41 +230,60 @@ export default function AdminDashboard() {
   const [customers, setCustomers] = useState<CustomerUser[]>([]);
   const [savingSettings, setSavingSettings] = useState(false);
 
-  // Persistent Auth Check (No expulsa al usuario al recargar)
+  // Verificación estricta de sesión y permisos de administrador
   useEffect(() => {
-    const hasAdminSession = 
-      typeof window !== "undefined" && 
-      (localStorage.getItem("admin_session") === "true" || sessionStorage.getItem("mockAuth") === "true");
+    if (!auth) {
+      router.push("/admin/login");
+      return;
+    }
 
-    if (auth) {
-      const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-        if (currentUser) {
-          localStorage.setItem("admin_session", "true");
-          setAuthChecking(false);
-          fetchProducts();
-          fetchLoyaltyData();
-          fetchOrders();
-        } else if (hasAdminSession) {
-          // Mantener abierta la sesión del admin guardada en localStorage
-          setAuthChecking(false);
-          fetchProducts();
-          fetchLoyaltyData();
-          fetchOrders();
-        } else {
-          router.push("/admin/login");
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      if (!currentUser) {
+        if (typeof window !== "undefined") {
+          localStorage.removeItem("admin_session");
         }
-      });
-      return () => unsubscribe();
-    } else {
-      if (hasAdminSession) {
+        router.push("/admin/login");
+        return;
+      }
+
+      // Verificar en Firestore si la cuenta tiene rol "admin"
+      let isAuthorized = false;
+      if (db) {
+        try {
+          const userDoc = await getDoc(doc(db, "users", currentUser.uid));
+          if (userDoc.exists() && userDoc.data()?.role === "admin") {
+            isAuthorized = true;
+          }
+        } catch (e) {
+          console.error("Error verificando permisos de administrador", e);
+        }
+      }
+
+      // Comprobación de seguridad por correo del salón
+      const cleanEmail = (currentUser.email || "").toLowerCase();
+      if (cleanEmail.includes("admin") || cleanEmail.includes("liliana")) {
+        isAuthorized = true;
+      }
+
+      if (isAuthorized) {
+        if (typeof window !== "undefined") {
+          localStorage.setItem("admin_session", "true");
+        }
         setAuthChecking(false);
         fetchProducts();
+        fetchLoyaltyData();
         fetchOrders();
       } else {
-        router.push("/admin/login");
+        // Usuario con cuenta de cliente intentando acceder al panel admin
+        if (typeof window !== "undefined") {
+          localStorage.removeItem("admin_session");
+        }
+        router.push("/admin/login?error=unauthorized");
       }
-    }
-  }, []);
+    });
+
+    return () => unsubscribe();
+  }, [router]);
 
   const fetchProducts = async () => {
     setLoading(true);

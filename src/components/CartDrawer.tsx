@@ -146,13 +146,19 @@ export default function CartDrawer() {
       const salonWhatsApp = country === "GT" ? "50242083721" : "50242083721";
       const finalWhatsAppUrl = `https://wa.me/${salonWhatsApp}?text=${encodeURIComponent(whatsappText)}`;
 
+      // Guardar localmente el último pedido para acceso rápido y sincronización
+      if (typeof window !== "undefined") {
+        localStorage.setItem("last_order_id", orderId || orderNumber);
+        localStorage.setItem("last_order_number", orderNumber);
+      }
+
       // Limpiar carrito tras generar la orden oficial
       clearCart();
       setIsCartOpen(false);
 
       // Abrir WhatsApp en pestaña nueva y redirigir al recibo en la actual
       window.open(finalWhatsAppUrl, "_blank");
-      router.push(`/pedido/${orderId}`);
+      router.push(`/pedido/${orderId || orderNumber}`);
 
     } catch (err: any) {
       console.error("Error creating order", err);
