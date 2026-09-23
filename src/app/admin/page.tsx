@@ -108,7 +108,7 @@ export interface OrderReceipt {
   subtotal: number;
   discount: number;
   couponApplied: boolean;
-  couponCode?: string;
+  couponCode?: string | null;
   total: number;
   paymentMethod: string;
   pointsEarned: number;
@@ -339,23 +339,24 @@ export default function AdminDashboard() {
 
   const generateWhatsAppReceiptText = (r: OrderReceipt) => {
     const symbol = r.currency === "GTQ" ? "Q" : "$";
-    const itemsText = r.items?.map(i => `• *${i.productName}*${i.volume ? ` (${i.volume})` : ""} x${i.quantity} — ${symbol}${i.totalPrice.toFixed(2)}`).join("\n") || "";
-    const couponText = r.couponApplied ? `\n🎉 *Descuento Bienvenida (15% en 1 producto):* -${symbol}${r.discount.toFixed(2)} (${r.couponCode || "BIENVENIDA15"})` : "";
+    const itemsText = r.items?.map(i => `* ${i.quantity}x ${i.productName}${i.volume ? ` (${i.volume})` : ""} — ${symbol}${i.totalPrice.toFixed(2)}`).join("\n") || "";
+    const couponText = r.couponApplied ? `\nDescuento Bienvenida (15% en 1 producto): -${symbol}${r.discount.toFixed(2)} (${r.couponCode || "BIENVENIDA15"})` : "";
+    const countryName = r.currency === "GTQ" ? "Guatemala" : "El Salvador";
     
     return encodeURIComponent(
-      `🧾 *RECIBO OFICIAL — LILIANA SALON*\n` +
-      `Recibo Nº: *#${r.orderNumber}*\n` +
-      `Cliente: *${r.customerName}* (${r.customerEmail})\n` +
+      `RECIBO OFICIAL — LILIANA SALON\n` +
+      `Recibo No: #${r.orderNumber}\n` +
+      `Cliente: ${r.customerName} (${r.customerEmail})\n` +
       `----------------------------------------\n` +
       `${itemsText}\n` +
       `----------------------------------------\n` +
       `Subtotal: ${symbol}${r.subtotal.toFixed(2)}${couponText}\n` +
-      `*TOTAL COBRADO:* *${symbol}${r.total.toFixed(2)} ${r.currency}*\n` +
+      `TOTAL COBRADO: ${symbol}${r.total.toFixed(2)} ${r.currency}\n` +
       `Método de pago: ${r.paymentMethod}\n` +
-      `⭐ *Puntos acumulados con esta compra:* +${r.pointsEarned} pts\n` +
+      `Puntos acumulados con esta compra: +${r.pointsEarned} pts\n` +
       `----------------------------------------\n` +
-      `¡Muchísimas gracias por consentir tu cabello con nosotros! ✨\n` +
-      `_Liliana Salon • Cuidado Capilar Profesional (Guatemala 🇬🇹 / El Salvador 🇸🇻)_`
+      `¡Muchísimas gracias por tu compra en Liliana Salon!\n` +
+      `Liliana Salon • Cuidado Capilar Profesional (${countryName})`
     );
   };
 
@@ -458,10 +459,10 @@ export default function AdminDashboard() {
         customerPhone: cPhone,
         items: [
           {
-            productId: product.id,
-            productName: product.name,
-            brand: product.brand || product.category,
-            volume: product.volume,
+            productId: product.id || "",
+            productName: product.name || "",
+            brand: product.brand || product.category || "Liliana Salon",
+            volume: product.volume || "",
             quantity: orderQuantity,
             unitPrice,
             totalPrice: subtotal
@@ -471,12 +472,12 @@ export default function AdminDashboard() {
         subtotal,
         discount,
         couponApplied: canUseCoupon,
-        couponCode: canUseCoupon ? (customer?.welcomeCoupon || "BIENVENIDA15") : undefined,
+        couponCode: canUseCoupon ? (customer?.welcomeCoupon || "BIENVENIDA15") : null,
         total,
-        paymentMethod,
+        paymentMethod: paymentMethod || "Transferencia / Depósito",
         pointsEarned,
         status: "completada",
-        notes: orderNotes,
+        notes: orderNotes || "",
         createdAt: new Date().toISOString()
       };
 

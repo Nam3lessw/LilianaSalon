@@ -125,17 +125,17 @@ export default function Home() {
     const volumeText = product.volume ? ` (${product.volume})` : "";
     const rawPrice = getRawPrice(product.price, product.priceUSD);
     const formattedPrice = formatPrice(product.price, product.priceUSD);
-    const destinationCountry = countryName; // "Guatemala" o "El Salvador" sin banderas Unicode rotas
+    const destinationCountry = countryName;
     let text = "";
 
     if (userProfile && !userProfile.firstPurchaseUsed) {
       const discountPrice = (rawPrice * 0.85).toFixed(2);
       const discountFormatted = country === "SV" ? `$${discountPrice} USD` : `Q${discountPrice}`;
-      text = `¡Hola Liliana Salon! 👋 Soy ${userProfile.name} desde ${destinationCountry}.\nMe interesa comprar: *${product.name}*${volumeText}.\n🎁 Cupón 15% (BIENVENIDA15): *${discountFormatted}*.\n¿Tienen disponibilidad para envío? ✨`;
+      text = `¡Hola Liliana Salon!\nSoy ${userProfile.name} desde ${destinationCountry}.\nMe interesa comprar: ${product.name}${volumeText}.\nCupón 15% (BIENVENIDA15), precio: ${discountFormatted}.\n¿Tienen disponibilidad para envío? Muchas gracias.`;
     } else if (userProfile) {
-      text = `¡Hola Liliana Salon! 👋 Soy ${userProfile.name} desde ${destinationCountry}.\nMe interesa ordenar: *${product.name}*${volumeText} por *${formattedPrice}*.\n¿Tienen disponibilidad para envío? ✨`;
+      text = `¡Hola Liliana Salon!\nSoy ${userProfile.name} desde ${destinationCountry}.\nMe interesa ordenar: ${product.name}${volumeText} por ${formattedPrice}.\n¿Tienen disponibilidad para envío? Muchas gracias.`;
     } else {
-      text = `¡Hola Liliana Salon! 👋 Me interesa adquirir desde ${destinationCountry}: *${product.name}*${volumeText} por *${formattedPrice}*.\n¿Tienen disponibilidad y servicio de entrega? ✨`;
+      text = `¡Hola Liliana Salon!\nMe interesa adquirir desde ${destinationCountry}: ${product.name}${volumeText} por ${formattedPrice}.\n¿Tienen disponibilidad y servicio de entrega? Muchas gracias.`;
     }
 
     return `https://wa.me/${phoneNumber}?text=${encodeURIComponent(text)}`;
@@ -173,7 +173,7 @@ export default function Home() {
                 VER PRODUCTOS
               </a>
               <a 
-                href={`https://wa.me/${phoneNumber}?text=${encodeURIComponent(`Hola Liliana, te escribo desde ${countryName} ${countryFlag}. Me gustaría recibir asesoría sobre productos para mi cabello.`)}`}
+                href={`https://wa.me/${phoneNumber}?text=${encodeURIComponent(`Hola Liliana, te escribo desde ${countryName}. Me gustaría recibir asesoría sobre productos para mi cabello.`)}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="bg-white/90 sm:bg-transparent border border-stone-800 text-stone-900 px-5 py-3.5 text-xs tracking-[0.2em] font-semibold uppercase hover:bg-stone-900 hover:text-white hover:scale-[1.02] active:scale-[0.98] transition-all duration-300 flex items-center justify-center gap-2 rounded-lg sm:rounded-none shadow-xs"

@@ -119,27 +119,29 @@ export default function CartDrawer() {
       const origin = typeof window !== "undefined" ? window.location.origin : "https://liliana-salon.vercel.app";
       const verificationUrl = `${origin}/pedido/${orderId}`;
 
-      // Formatear mensaje limpio de WhatsApp sin caracteres que se corrompan
+      // Formatear mensaje limpio de WhatsApp sin emojis para compatibilidad total
       const symbol = currencySymbol;
       const itemsListText = orderItems
-        .map(i => `• ${i.quantity}x *${i.productName}*${i.volume ? ` (${i.volume})` : ""} — ${symbol}${i.totalPrice.toFixed(2)}`)
+        .map(i => `* ${i.quantity}x ${i.productName}${i.volume ? ` (${i.volume})` : ""} — ${symbol}${i.totalPrice.toFixed(2)}`)
         .join("\n");
 
       const couponLine = (canApplyWelcomeCoupon && applyWelcomeCoupon && discount > 0)
-        ? `\n🎁 *Cupón 1er producto (15%):* -${symbol}${discount.toFixed(2)}`
+        ? `\nCupón 1er producto (15%): -${symbol}${discount.toFixed(2)}`
         : "";
 
-      const notesLine = deliveryNotes.trim() ? `\n📝 *Nota:* ${deliveryNotes.trim()}` : "";
+      const notesLine = deliveryNotes.trim() ? `\nNota: ${deliveryNotes.trim()}` : "";
 
       const whatsappText = 
-        `¡Hola Liliana Salon! 👋\n` +
-        `Soy *${effectiveName || "Cliente"}* desde ${countryName}.\n` +
-        `Deseo realizar el pedido *#${orderNumber}*:\n\n` +
-        `${itemsListText}${couponLine}\n\n` +
-        `💰 *TOTAL OFICIAL:* *${symbol}${total.toFixed(2)} ${currencyCode}*\n` +
-        `⭐ *Puntos a ganar:* +${pointsToEarn} pts${notesLine}\n\n` +
-        `🔗 *Verificar pedido oficial:* \n${verificationUrl}\n\n` +
-        `¿Me podrían indicar los datos para realizar la transferencia/pago y coordinar el envío? Muchas gracias. ✨`;
+        `¡Hola Liliana Salon!\n` +
+        `Soy ${effectiveName || "Cliente"} desde ${countryName}.\n` +
+        `Deseo realizar el pedido #${orderNumber}:\n\n` +
+        `${itemsListText}\n` +
+        `${couponLine}\n` +
+        `TOTAL OFICIAL: ${symbol}${total.toFixed(2)} ${currencyCode}\n` +
+        `Puntos a ganar: +${pointsToEarn} pts${notesLine}\n\n` +
+        `Verificar pedido oficial:\n` +
+        `${verificationUrl}\n\n` +
+        `¿Me podrían indicar los datos para realizar la transferencia/pago y coordinar el envío? Muchas gracias.`;
 
       const salonWhatsApp = country === "GT" ? "50242083721" : "50242083721";
       const finalWhatsAppUrl = `https://wa.me/${salonWhatsApp}?text=${encodeURIComponent(whatsappText)}`;
