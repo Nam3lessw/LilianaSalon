@@ -10,17 +10,33 @@ import {
   ChevronUp
 } from "lucide-react";
 import { useCountry } from "@/context/CountryContext";
+import { useAuth } from "@/context/AuthContext";
+import { useCart } from "@/context/CartContext";
 
 export default function WhatsAppButton() {
   const { country, countryName, setCountry, currencySymbol } = useCountry();
+  const { authModalOpen, customerDrawerOpen } = useAuth();
+  const { isCartOpen } = useCart();
   const [isOpen, setIsOpen] = useState(false);
   const [tooltipHovered, setTooltipHovered] = useState(false);
+  const [hasModalOpen, setHasModalOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const phoneNumber = "50242083721";
   const message = `Hola Liliana Salon, me gustaría recibir asesoría sobre productos y tratamientos desde ${countryName}.`;
   const whatsappUrl = `https://wa.me/${phoneNumber}?text=${encodeURIComponent(message)}`;
   const phoneCallUrl = `tel:+${phoneNumber}`;
+
+  // Detect when any modal or drawer is open in the application
+  useEffect(() => {
+    const checkModal = () => {
+      setHasModalOpen(document.body.classList.contains("modal-open"));
+    };
+    checkModal();
+    const observer = new MutationObserver(checkModal);
+    observer.observe(document.body, { attributes: true, attributeFilter: ["class"] });
+    return () => observer.disconnect();
+  }, []);
 
   // Close when clicking outside
   useEffect(() => {
@@ -49,16 +65,19 @@ export default function WhatsAppButton() {
 
   const handleSelectCountry = (newCountry: "GT" | "SV") => {
     setCountry(newCountry);
-    // Keep menu open for immediate feedback, or close smoothly after a short delay
     setTimeout(() => {
       setIsOpen(false);
     }, 350);
   };
 
+  const shouldHide = Boolean(isCartOpen || authModalOpen || customerDrawerOpen || hasModalOpen);
+
   return (
     <div 
       ref={containerRef}
-      className="fixed bottom-5 right-5 sm:bottom-7 sm:right-7 z-50 flex flex-col items-end pointer-events-auto select-none"
+      className={`fixed bottom-5 right-5 sm:bottom-7 sm:right-7 z-30 flex flex-col items-end pointer-events-none select-none transition-all duration-300 ${
+        shouldHide ? "opacity-0 pointer-events-none translate-y-6 scale-90" : "opacity-100"
+      }`}
     >
       {/* Menú desplegable hacia arriba (Speed Dial) */}
       <div 
@@ -180,7 +199,7 @@ export default function WhatsAppButton() {
           onClick={() => setIsOpen(prev => !prev)}
           onMouseEnter={() => setTooltipHovered(true)}
           onMouseLeave={() => setTooltipHovered(false)}
-          className={`relative group p-4 sm:p-4 rounded-full shadow-xl hover:shadow-2xl transition-all duration-300 flex items-center justify-center active:scale-95 ${
+          className={`pointer-events-auto cursor-pointer touch-manipulation relative group p-4 sm:p-4 rounded-full shadow-xl hover:shadow-2xl transition-all duration-300 flex items-center justify-center active:scale-95 ${
             isOpen 
               ? "bg-stone-900 text-white rotate-90 scale-105" 
               : "bg-[#25D366] hover:bg-[#20ba59] text-white hover:scale-105"

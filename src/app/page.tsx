@@ -22,6 +22,18 @@ export default function Home() {
 
   const phoneNumber = "50242083721";
 
+  // Controlar clase modal-open en body para ocultar botones flotantes
+  useEffect(() => {
+    if (selectedProduct) {
+      document.body.classList.add("modal-open");
+    } else {
+      document.body.classList.remove("modal-open");
+    }
+    return () => {
+      document.body.classList.remove("modal-open");
+    };
+  }, [selectedProduct]);
+
   useEffect(() => {
     const fetchProducts = async () => {
       setLoading(true);
@@ -524,17 +536,26 @@ export default function Home() {
       {/* MODAL EXPANDIDO DE PRODUCTO (Optimizado para móvil y multidivisa) */}
       {selectedProduct && (
         <div 
-          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-6 overflow-y-auto transition-opacity duration-300 animate-in fade-in"
-          onClick={() => setSelectedProduct(null)}
+          className="fixed inset-0 z-[70] bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-6 overflow-y-auto transition-opacity duration-300 animate-in fade-in"
+          onClick={() => {
+            setSelectedProduct(null);
+            setModalQty(1);
+          }}
         >
           <div 
             className="bg-white rounded-t-3xl sm:rounded-3xl max-w-4xl w-full max-h-[92vh] sm:max-h-[90vh] overflow-y-auto shadow-2xl border border-stone-200 relative my-0 sm:my-8 transform transition-all duration-300 ease-out animate-in zoom-in-95 sm:fade-in"
             onClick={(e) => e.stopPropagation()}
+            onTouchStart={(e) => e.stopPropagation()}
           >
             {/* Botón Cerrar */}
             <button 
-              onClick={() => setSelectedProduct(null)}
-              className="absolute top-3 right-3 sm:top-4 sm:right-4 z-20 w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-white/90 hover:bg-black hover:text-white text-stone-700 flex items-center justify-center shadow-md hover:scale-105 active:scale-95 transition-all border border-stone-200"
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setSelectedProduct(null);
+                setModalQty(1);
+              }}
+              className="absolute top-3 right-3 sm:top-4 sm:right-4 z-20 w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-white/90 hover:bg-black hover:text-white text-stone-700 flex items-center justify-center shadow-md hover:scale-105 active:scale-95 transition-all border border-stone-200 touch-manipulation cursor-pointer"
               aria-label="Cerrar ventana"
             >
               <X size={18} />
@@ -665,71 +686,89 @@ export default function Home() {
                 </div>
 
                 {/* Botones de Acción en el Modal: Carrito y WhatsApp Directo */}
-                <div className="space-y-3 pt-3 sm:pt-4 border-t border-stone-100">
-                  <div className="flex items-center gap-3">
-                    {/* Selector de Cantidad */}
-                    <div className="flex items-center border border-stone-200 rounded-xl bg-[#FAF9F7] p-1">
-                      <button
-                        onClick={() => setModalQty(Math.max(1, modalQty - 1))}
-                        disabled={selectedProduct.stock === 0}
-                        className="w-8 h-8 rounded-lg bg-white hover:bg-stone-100 text-stone-700 flex items-center justify-center transition shadow-2xs disabled:opacity-40"
-                        aria-label="Menos"
+                {(() => {
+                  const availableStock = selectedProduct.stock !== undefined ? Number(selectedProduct.stock) : 99;
+                  const isOutOfStock = availableStock <= 0;
+                  const isAtMaxStock = modalQty >= availableStock;
+
+                  return (
+                    <div className="space-y-3 pt-3 sm:pt-4 border-t border-stone-100 relative z-10">
+                      <div className="flex items-center gap-3">
+                        {/* Selector de Cantidad */}
+                        <div className="flex items-center border border-stone-200 rounded-xl bg-[#FAF9F7] p-1 shadow-2xs select-none">
+                          <button
+                            type="button"
+                            disabled={isOutOfStock}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setModalQty(prev => Math.max(1, prev - 1));
+                            }}
+                            className="w-11 h-11 sm:w-9 sm:h-9 rounded-lg bg-white hover:bg-stone-100 text-stone-700 flex items-center justify-center transition shadow-2xs disabled:opacity-30 touch-manipulation cursor-pointer active:scale-90"
+                            aria-label="Disminuir cantidad"
+                          >
+                            <Minus size={16} />
+                          </button>
+                          <span className="w-10 text-center text-sm font-bold text-gray-900 select-none">
+                            {modalQty}
+                          </span>
+                          <button
+                            type="button"
+                            disabled={isOutOfStock || isAtMaxStock}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (modalQty < availableStock) {
+                                setModalQty(prev => prev + 1);
+                              }
+                            }}
+                            className={`w-11 h-11 sm:w-9 sm:h-9 rounded-lg flex items-center justify-center transition shadow-2xs touch-manipulation active:scale-90 ${
+                              isOutOfStock || isAtMaxStock
+                                ? "bg-stone-100 text-stone-300 cursor-not-allowed"
+                                : "bg-white hover:bg-stone-100 text-stone-700 cursor-pointer"
+                            }`}
+                            aria-label="Aumentar cantidad"
+                            title={isAtMaxStock ? `Stock máximo: ${availableStock}` : "Aumentar cantidad"}
+                          >
+                            <Plus size={16} />
+                          </button>
+                        </div>
+
+                        {/* Botón Añadir a la Bolsa */}
+                        <button
+                          type="button"
+                          disabled={isOutOfStock}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (!isOutOfStock) {
+                              addToCart(selectedProduct, modalQty);
+                              setSelectedProduct(null);
+                              setModalQty(1);
+                            }
+                          }}
+                          className={`flex-1 py-3.5 px-4 rounded-xl text-xs sm:text-sm font-bold uppercase tracking-wider flex items-center justify-center gap-2 shadow-md transition-all touch-manipulation select-none ${
+                            isOutOfStock
+                              ? "bg-stone-200 text-stone-400 cursor-not-allowed"
+                              : "bg-black hover:bg-stone-800 text-white cursor-pointer active:scale-[0.98]"
+                          }`}
+                        >
+                          <ShoppingBag size={18} /> {isOutOfStock ? "Producto Agotado" : "Añadir a la Bolsa"}
+                        </button>
+                      </div>
+
+                      <a
+                        href={getWhatsAppProductLink(selectedProduct)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-full border border-stone-300 hover:border-black bg-white hover:bg-stone-50 text-stone-900 py-3 px-4 rounded-xl text-xs font-semibold tracking-wider uppercase flex items-center justify-center gap-2 transition-all duration-200 touch-manipulation"
                       >
-                        <Minus size={14} />
-                      </button>
-                      <span className="w-8 text-center text-xs font-bold text-gray-900">
-                        {modalQty}
-                      </span>
-                      <button
-                        onClick={() => {
-                          if (modalQty < selectedProduct.stock) {
-                            setModalQty(modalQty + 1);
-                          }
-                        }}
-                        disabled={selectedProduct.stock === 0 || modalQty >= selectedProduct.stock}
-                        className={`w-8 h-8 rounded-lg flex items-center justify-center transition shadow-2xs ${
-                          selectedProduct.stock === 0 || modalQty >= selectedProduct.stock
-                            ? "bg-stone-100 text-stone-300 cursor-not-allowed"
-                            : "bg-white hover:bg-stone-100 text-stone-700"
-                        }`}
-                        aria-label="Más"
-                        title={modalQty >= selectedProduct.stock ? `Stock máximo: ${selectedProduct.stock}` : "Aumentar cantidad"}
-                      >
-                        <Plus size={14} />
-                      </button>
+                        <MessageCircle size={16} className="text-[#25D366]" /> Pedir por WhatsApp ({countryName})
+                      </a>
+                      <p className="text-[10px] sm:text-[11px] text-stone-400 text-center flex items-center justify-center gap-1">
+                        <ShieldCheck size={13} className="text-stone-400" />
+                        Envíos en Guatemala y El Salvador • Pagos seguros
+                      </p>
                     </div>
-
-                    {/* Botón Añadir a la Bolsa */}
-                    <button
-                      disabled={selectedProduct.stock === 0}
-                      onClick={() => {
-                        addToCart(selectedProduct, modalQty);
-                        setSelectedProduct(null);
-                        setModalQty(1);
-                      }}
-                      className={`flex-1 py-3.5 px-4 rounded-xl text-xs sm:text-sm font-bold uppercase tracking-wider flex items-center justify-center gap-2 shadow-md transition-all ${
-                        selectedProduct.stock === 0
-                          ? "bg-stone-200 text-stone-400 cursor-not-allowed"
-                          : "bg-black hover:bg-stone-800 text-white hover:scale-[1.01] active:scale-[0.99]"
-                      }`}
-                    >
-                      <ShoppingBag size={16} /> {selectedProduct.stock === 0 ? "Producto Agotado" : "Añadir a la Bolsa"}
-                    </button>
-                  </div>
-
-                  <a
-                    href={getWhatsAppProductLink(selectedProduct)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="w-full border border-stone-300 hover:border-black bg-white hover:bg-stone-50 text-stone-900 py-3 px-4 rounded-xl text-xs font-semibold tracking-wider uppercase flex items-center justify-center gap-2 transition-all duration-200"
-                  >
-                    <MessageCircle size={16} className="text-[#25D366]" /> Pedir por WhatsApp ({countryName})
-                  </a>
-                  <p className="text-[10px] sm:text-[11px] text-stone-400 text-center flex items-center justify-center gap-1">
-                    <ShieldCheck size={13} className="text-stone-400" />
-                    Envíos en Guatemala y El Salvador • Pagos seguros
-                  </p>
-                </div>
+                  );
+                })()}
               </div>
             </div>
           </div>
@@ -753,7 +792,7 @@ export default function Home() {
       </footer>
 
       {/* Botón Flotante de Bolsa de Compras cuando hay productos */}
-      {totalItems > 0 && (
+      {totalItems > 0 && !selectedProduct && (
         <div className="fixed bottom-5 left-5 sm:bottom-7 sm:left-7 z-40 animate-in slide-in-from-bottom duration-300">
           <button
             onClick={() => setIsCartOpen(true)}
