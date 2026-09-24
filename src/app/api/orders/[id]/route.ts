@@ -60,6 +60,7 @@ export async function GET(
       items: orderData.items || [],
       subtotal: orderData.subtotal || 0,
       discount: orderData.discount || 0,
+      wholesaleDiscount: orderData.wholesaleDiscount || 0,
       couponApplied: Boolean(orderData.couponApplied),
       couponCode: orderData.couponCode,
       total: orderData.total || 0,

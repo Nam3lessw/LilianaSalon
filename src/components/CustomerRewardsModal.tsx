@@ -40,6 +40,7 @@ interface UserOrder {
   currency: "GTQ" | "USD";
   subtotal: number;
   discount: number;
+  wholesaleDiscount?: number;
   couponApplied: boolean;
   couponCode?: string;
   total: number;
@@ -476,6 +477,13 @@ export default function CustomerRewardsModal() {
                             <span>Subtotal:</span>
                             <span>{symbol}{o.subtotal?.toFixed(2)}</span>
                           </div>
+
+                          {o.wholesaleDiscount && o.wholesaleDiscount > 0 && (
+                            <div className="flex justify-between text-emerald-700 font-semibold">
+                              <span>Descuento Mayoreo / Docena (10%):</span>
+                              <span>-{symbol}{o.wholesaleDiscount.toFixed(2)}</span>
+                            </div>
+                          )}
 
                           {o.discount > 0 && (
                             <div className="flex justify-between text-emerald-700 font-semibold">

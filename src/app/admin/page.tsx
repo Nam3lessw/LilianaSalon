@@ -107,6 +107,7 @@ export interface OrderReceipt {
   currency: "GTQ" | "USD";
   subtotal: number;
   discount: number;
+  wholesaleDiscount?: number;
   couponApplied: boolean;
   couponCode?: string | null;
   total: number;

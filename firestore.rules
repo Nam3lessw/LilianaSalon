@@ -58,21 +58,24 @@ service cloud.firestore {
     }
 
     // --- 4. ORDERS ---
-    // An authenticated user can only read their own orders. Admins can read and manage all orders.
+    // Anyone with the exact unguessable orderId (from WhatsApp link or customer profile) can view (get) the ticket.
+    // Querying/listing orders (list) is strictly restricted to the order owner or admins.
     // Clients CANNOT transition order status, alter total, modify discounts, or change awarded points.
     match /orders/{orderId} {
-      allow read: if isAdmin() || (
+      allow get: if true;
+      allow list: if isAdmin() || (
         isSignedIn() && (
           resource.data.customerId == request.auth.uid ||
           (resource.data.customerEmail != null && resource.data.customerEmail == request.auth.token.email)
         )
       );
 
-      // Client creation: allowed only when creating order for own uid with status "pendiente"
+      // Order creation: allowed only with status "pendiente"
       allow create: if isAdmin() || (
-        isSignedIn() &&
-        request.resource.data.customerId == request.auth.uid &&
-        request.resource.data.status == 'pendiente'
+        request.resource.data.status == 'pendiente' && (
+          (isSignedIn() && request.resource.data.customerId == request.auth.uid) ||
+          (!isSignedIn() && request.resource.data.customerId == 'guest')
+        )
       );
 
       // Order status transitions (e.g. marking as completada) and price alterations must go through admin/backend

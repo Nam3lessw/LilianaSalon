@@ -14,6 +14,7 @@ export interface CartItem {
   priceUSD?: number | null;
   image: string;
   quantity: number;
+  stock: number;
 }
 
 interface CartContextType {
@@ -27,6 +28,10 @@ interface CartContextType {
   totalItems: number;
   subtotal: number;
   discount: number;
+  wholesaleDiscount: number;
+  isWholesaleDiscountApplied: boolean;
+  unitsNeededForWholesale: number;
+  wholesaleDiscountPercent: number;
   total: number;
   pointsToEarn: number;
   applyWelcomeCoupon: boolean;
@@ -87,13 +92,37 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   };
 
   const addToCart = (product: any, quantity: number = 1) => {
+    const rawStock = product.stock !== undefined ? Number(product.stock) : 99;
+    if (rawStock <= 0) {
+      alert(`El producto "${product.name}" está actualmente agotado en inventario.`);
+      return;
+    }
+
     setItems(prev => {
       const existingIndex = prev.findIndex(item => item.id === product.id);
       if (existingIndex > -1) {
         const updated = [...prev];
-        updated[existingIndex].quantity += quantity;
+        const currentQty = updated[existingIndex].quantity;
+        const availableStock = updated[existingIndex].stock ?? rawStock;
+        const targetQty = currentQty + quantity;
+
+        if (targetQty > availableStock) {
+          alert(`Solo quedan ${availableStock} unidades disponibles de "${product.name}". Se ajustó tu bolsa al límite disponible.`);
+          updated[existingIndex].quantity = availableStock;
+          updated[existingIndex].stock = availableStock;
+          return updated;
+        }
+
+        updated[existingIndex].quantity = targetQty;
+        updated[existingIndex].stock = availableStock;
         return updated;
       }
+
+      const initialQty = Math.min(Math.max(1, quantity), rawStock);
+      if (quantity > rawStock) {
+        alert(`Solo quedan ${rawStock} unidades disponibles de "${product.name}". Se añadieron ${rawStock} unidades a tu bolsa.`);
+      }
+
       return [
         ...prev,
         {
@@ -105,7 +134,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
           priceGTQ: product.price,
           priceUSD: product.priceUSD ?? null,
           image: product.image,
-          quantity: Math.max(1, quantity)
+          quantity: initialQty,
+          stock: rawStock
         }
       ];
     });
@@ -122,7 +152,15 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       return;
     }
     setItems(prev =>
-      prev.map(item => (item.id === productId ? { ...item, quantity } : item))
+      prev.map(item => {
+        if (item.id !== productId) return item;
+        const maxStock = item.stock !== undefined ? item.stock : 99;
+        if (quantity > maxStock) {
+          alert(`Has alcanzado el límite de inventario. Solo hay ${maxStock} unidades disponibles de "${item.name}".`);
+          return { ...item, quantity: maxStock };
+        }
+        return { ...item, quantity };
+      })
     );
   };
 
@@ -137,7 +175,15 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     items.reduce((sum, item) => sum + getItemUnitPrice(item) * item.quantity, 0)
   );
 
-  // Regla del cupón: solo aplica si el usuario no es admin y no lo ha usado antes
+  // Descuento al por mayor o por docena (12+ unidades en total o 12+ de un producto específico)
+  const isWholesaleDiscountApplied = totalItems >= 12 || items.some(item => item.quantity >= 12);
+  const wholesaleDiscountPercent = 10;
+  const wholesaleDiscount = isWholesaleDiscountApplied
+    ? roundToCommercialPrice(subtotal * (wholesaleDiscountPercent / 100))
+    : 0;
+  const unitsNeededForWholesale = Math.max(0, 12 - totalItems);
+
+  // Regla del cupón de bienvenida: solo aplica si el usuario no es admin y no lo ha usado antes
   const canApplyWelcomeCoupon = Boolean(!isAdmin && userProfile && !userProfile.firstPurchaseUsed && items.length > 0);
 
   // Encontrar el producto más valioso para aplicar el 15% estrictamente a 1 unidad
@@ -158,7 +204,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  const total = roundToCommercialPrice(Math.max(0, subtotal - discount));
+  const total = roundToCommercialPrice(Math.max(0, subtotal - wholesaleDiscount - discount));
 
   // Puntos ganados con la compra (Admin no acumula puntos)
   const pointsToEarn = isAdmin ? 0 : (country === "GT"
@@ -178,6 +224,10 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         totalItems,
         subtotal,
         discount,
+        wholesaleDiscount,
+        isWholesaleDiscountApplied,
+        unitsNeededForWholesale,
+        wholesaleDiscountPercent,
         total,
         pointsToEarn,
         applyWelcomeCoupon,

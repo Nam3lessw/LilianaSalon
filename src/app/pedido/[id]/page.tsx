@@ -1,7 +1,8 @@
 "use client";
 import React, { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { auth } from "@/lib/firebase";
+import { auth, db } from "@/lib/firebase";
+import { doc, getDoc, collection, query, where, getDocs } from "firebase/firestore";
 import { useAuth } from "@/context/AuthContext";
 import { 
   CheckCircle2, 
@@ -42,6 +43,7 @@ interface OrderDetail {
   items: OrderItem[];
   subtotal: number;
   discount: number;
+  wholesaleDiscount?: number;
   couponApplied: boolean;
   couponCode?: string | null;
   total: number;
@@ -71,7 +73,46 @@ export default function OrderVerificationPage() {
     const fetchOrder = async () => {
       setLoading(true);
       setError(null);
+      const cleanId = orderIdParam.trim();
+
       try {
+        // 1. Carga directa desde Firestore del cliente (rápida, segura y sin fallos de credenciales en servidor)
+        if (db) {
+          try {
+            const docRef = doc(db, "orders", cleanId);
+            const docSnap = await getDoc(docRef);
+
+            if (docSnap.exists()) {
+              const data = docSnap.data();
+              setOrder({
+                id: docSnap.id,
+                ...data,
+                orderNumber: data.orderNumber || docSnap.id,
+              } as OrderDetail);
+              setLoading(false);
+              return;
+            }
+
+            // Si no se encontró por ID directo, buscar por orderNumber (ej. LS-22421)
+            const q = query(collection(db, "orders"), where("orderNumber", "==", cleanId));
+            const snap = await getDocs(q);
+            if (!snap.empty) {
+              const firstDoc = snap.docs[0];
+              const data = firstDoc.data();
+              setOrder({
+                id: firstDoc.id,
+                ...data,
+                orderNumber: data.orderNumber || firstDoc.id,
+              } as OrderDetail);
+              setLoading(false);
+              return;
+            }
+          } catch (clientDbErr) {
+            console.warn("Client Firestore order lookup notice:", clientDbErr);
+          }
+        }
+
+        // 2. Fallback resiliente a través del endpoint de API
         let idToken: string | undefined;
         if (auth?.currentUser) {
           try {
@@ -81,23 +122,26 @@ export default function OrderVerificationPage() {
           }
         }
 
-        const res = await fetch(`/api/orders/${encodeURIComponent(orderIdParam)}`, {
+        const res = await fetch(`/api/orders/${encodeURIComponent(cleanId)}`, {
           headers: {
             ...(idToken ? { "Authorization": `Bearer ${idToken}` } : {})
           }
         });
 
-        const data = await res.json();
-        if (!res.ok) {
-          setError(data.error || "No se encontró ningún registro para este pedido. Por favor verifica el enlace.");
-          setLoading(false);
-          return;
+        const contentType = res.headers.get("content-type");
+        if (contentType && contentType.includes("application/json")) {
+          const data = await res.json();
+          if (!res.ok) {
+            setError(data.error || "No se encontró ningún registro para este pedido. Por favor verifica el enlace.");
+            return;
+          }
+          setOrder(data as OrderDetail);
+        } else {
+          setError("No se encontró ningún registro para este pedido. Por favor verifica el número o enlace oficial.");
         }
-
-        setOrder(data as OrderDetail);
       } catch (err: any) {
         console.error("Error fetching order", err);
-        setError("Error al cargar la información del pedido: " + err.message);
+        setError("Error al cargar la información del pedido: " + (err.message || "Error de red"));
       } finally {
         setLoading(false);
       }
@@ -367,6 +411,15 @@ export default function OrderVerificationPage() {
                 <span>Subtotal oficial:</span>
                 <span className="font-semibold text-gray-900">{symbol}{order.subtotal.toFixed(2)}</span>
               </div>
+
+              {order.wholesaleDiscount && order.wholesaleDiscount > 0 && (
+                <div className="flex justify-between text-emerald-700 font-semibold">
+                  <span className="flex items-center gap-1">
+                    <Sparkles size={12} /> Descuento Mayoreo / Docena (10%):
+                  </span>
+                  <span>-{symbol}{order.wholesaleDiscount.toFixed(2)}</span>
+                </div>
+              )}
 
               {order.discount > 0 && (
                 <div className="flex justify-between text-emerald-700 font-semibold">

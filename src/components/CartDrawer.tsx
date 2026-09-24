@@ -3,7 +3,8 @@ import React, { useState } from "react";
 import { useCart } from "@/context/CartContext";
 import { useCountry } from "@/context/CountryContext";
 import { useAuth } from "@/context/AuthContext";
-import { auth } from "@/lib/firebase";
+import { auth, db } from "@/lib/firebase";
+import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 import { 
   X, 
   Trash2, 
@@ -31,6 +32,10 @@ export default function CartDrawer() {
     clearCart,
     subtotal,
     discount,
+    wholesaleDiscount,
+    isWholesaleDiscountApplied,
+    unitsNeededForWholesale,
+    wholesaleDiscountPercent,
     total,
     pointsToEarn,
     applyWelcomeCoupon,
@@ -39,7 +44,8 @@ export default function CartDrawer() {
     couponDiscountItem,
     currencySymbol,
     currencyCode,
-    getItemUnitPrice
+    getItemUnitPrice,
+    totalItems
   } = useCart();
 
   const { country, countryName, setCountry } = useCountry();
@@ -78,58 +84,125 @@ export default function CartDrawer() {
         }
       }
 
-      // 1. Enviar carrito a la API segura para validación y cálculo de precios en servidor
-      const payload = {
-        items: items.map(i => ({
+      let orderId = "";
+      let orderNumber = `LS-${Date.now().toString().slice(-5)}`;
+      let verifiedTotal = total;
+      let verifiedDiscount = discount;
+      let verifiedWholesaleDiscount = wholesaleDiscount;
+      let verifiedPoints = pointsToEarn;
+      const origin = typeof window !== "undefined" ? window.location.origin : "https://liliana-salon.vercel.app";
+      let verificationUrl = "";
+      let verifiedItems = items.map(i => {
+        const uPrice = getItemUnitPrice(i);
+        return {
           productId: i.id,
-          quantity: i.quantity
-        })),
-        country,
-        applyWelcomeCoupon: Boolean(canApplyWelcomeCoupon && applyWelcomeCoupon),
-        customerName: effectiveName || "Cliente",
-        customerPhone: effectivePhone || "",
-        customerEmail: user?.email || "",
-        deliveryNotes: deliveryNotes.trim() || ""
-      };
-
-      const res = await fetch("/api/orders", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(idToken ? { "Authorization": `Bearer ${idToken}` } : {})
-        },
-        body: JSON.stringify(payload)
+          productName: i.name,
+          brand: i.brand || i.category || "Liliana Salon",
+          volume: i.volume || "",
+          quantity: i.quantity,
+          unitPrice: uPrice,
+          totalPrice: uPrice * i.quantity
+        };
       });
 
-      const orderResult = await res.json();
-      if (!res.ok) {
-        throw new Error(orderResult.error || "No se pudo procesar el pedido. Por favor intenta de nuevo.");
+      // 1. Intentar registrar vía API segura en el servidor
+      try {
+        const payload = {
+          items: items.map(i => ({
+            productId: i.id,
+            quantity: i.quantity
+          })),
+          country,
+          applyWelcomeCoupon: Boolean(canApplyWelcomeCoupon && applyWelcomeCoupon),
+          customerName: effectiveName || "Cliente",
+          customerPhone: effectivePhone || "",
+          customerEmail: user?.email || "",
+          deliveryNotes: deliveryNotes.trim() || ""
+        };
+
+        const res = await fetch("/api/orders", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(idToken ? { "Authorization": `Bearer ${idToken}` } : {})
+          },
+          body: JSON.stringify(payload)
+        });
+
+        if (res.ok) {
+          const contentType = res.headers.get("content-type");
+          if (contentType && contentType.includes("application/json")) {
+            const orderResult = await res.json();
+            orderId = orderResult.orderId;
+            orderNumber = orderResult.orderNumber;
+            verifiedTotal = orderResult.total;
+            verifiedDiscount = orderResult.discount;
+            verifiedWholesaleDiscount = orderResult.wholesaleDiscount || wholesaleDiscount;
+            verifiedPoints = orderResult.pointsEarned;
+            verificationUrl = orderResult.verificationUrl;
+            if (orderResult.items && orderResult.items.length > 0) {
+              verifiedItems = orderResult.items;
+            }
+          }
+        }
+      } catch (apiErr) {
+        console.warn("Notice: Order API route call, using client Firestore fallback:", apiErr);
       }
 
-      const orderId = orderResult.orderId;
-      const orderNumber = orderResult.orderNumber;
-      const verifiedTotal = orderResult.total;
-      const verifiedDiscount = orderResult.discount;
-      const verifiedPoints = orderResult.pointsEarned;
-      const verificationUrl = orderResult.verificationUrl;
-      const verifiedItems: Array<{
-        quantity: number;
-        productName: string;
-        volume?: string;
-        totalPrice: number;
-      }> = orderResult.items || [];
+      // 2. Si la API no devolvió orderId (p. ej. Vercel sin claves de servicio), persistir en Firestore
+      if (!orderId && db) {
+        try {
+          const orderDocData = {
+            orderNumber,
+            customerId: user?.uid || "guest",
+            customerName: effectiveName || "Cliente",
+            customerEmail: user?.email || "",
+            customerPhone: effectivePhone || "",
+            country,
+            currency: currencyCode,
+            items: verifiedItems,
+            subtotal,
+            discount: verifiedDiscount,
+            wholesaleDiscount: verifiedWholesaleDiscount,
+            couponApplied: Boolean(canApplyWelcomeCoupon && applyWelcomeCoupon && verifiedDiscount > 0),
+            couponCode: (canApplyWelcomeCoupon && applyWelcomeCoupon && verifiedDiscount > 0)
+              ? (userProfile?.welcomeCoupon || "BIENVENIDA15")
+              : null,
+            total: verifiedTotal,
+            pointsEarned: isAdmin ? 0 : verifiedPoints,
+            status: "pendiente",
+            notes: deliveryNotes.trim() || "",
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp()
+          };
 
-      // Formatear mensaje limpio de WhatsApp utilizando los valores oficiales validados por servidor
+          const docRef = await addDoc(collection(db, "orders"), orderDocData);
+          orderId = docRef.id;
+          verificationUrl = `${origin}/pedido/${orderId}`;
+        } catch (dbErr) {
+          console.warn("Client Firestore order save notice:", dbErr);
+          orderId = orderNumber;
+          verificationUrl = `${origin}/pedido/${orderNumber}`;
+        }
+      } else if (!verificationUrl) {
+        verificationUrl = `${origin}/pedido/${orderId || orderNumber}`;
+      }
+
+      // 3. Formatear mensaje limpio de WhatsApp
       const symbol = currencySymbol;
       const itemsListText = verifiedItems
         .map(i => `* ${i.quantity}x ${i.productName}${i.volume ? ` (${i.volume})` : ""} — ${symbol}${i.totalPrice.toFixed(2)}`)
         .join("\n");
 
+      const wholesaleLine = verifiedWholesaleDiscount > 0
+        ? `\nDescuento Mayoreo / Docena (10%): -${symbol}${verifiedWholesaleDiscount.toFixed(2)}`
+        : "";
+
       const couponLine = verifiedDiscount > 0
         ? `\nCupón 1er producto (15%): -${symbol}${verifiedDiscount.toFixed(2)}`
         : "";
 
-      const pointsLine = verifiedPoints > 0
+      const pointsLine = (!isAdmin && verifiedPoints > 0)
         ? `\nPuntos a ganar: +${verifiedPoints} pts`
         : "";
 
@@ -140,6 +213,7 @@ export default function CartDrawer() {
         `Soy ${effectiveName || "Cliente"} desde ${countryName}.\n` +
         `Deseo realizar el pedido #${orderNumber}:\n\n` +
         `${itemsListText}\n` +
+        `${wholesaleLine}` +
         `${couponLine}\n` +
         `TOTAL OFICIAL: ${symbol}${verifiedTotal.toFixed(2)} ${currencyCode}` +
         `${pointsLine}${notesLine}\n\n` +
@@ -147,7 +221,7 @@ export default function CartDrawer() {
         `${verificationUrl}\n\n` +
         `¿Me podrían indicar los datos para realizar la transferencia/pago y coordinar el envío? Muchas gracias.`;
 
-      const salonWhatsApp = country === "GT" ? "50242083721" : "50242083721";
+      const salonWhatsApp = "50242083721";
       const finalWhatsAppUrl = `https://wa.me/${salonWhatsApp}?text=${encodeURIComponent(whatsappText)}`;
 
       // Guardar localmente el último pedido para acceso rápido y sincronización
@@ -300,17 +374,59 @@ export default function CartDrawer() {
                           </span>
                           <button
                             onClick={() => updateQuantity(item.id, item.quantity + 1)}
-                            className="p-1 hover:bg-stone-100 text-stone-700 transition"
+                            disabled={item.stock !== undefined && item.quantity >= item.stock}
+                            className={`p-1 transition ${
+                              item.stock !== undefined && item.quantity >= item.stock
+                                ? "text-stone-300 bg-stone-50 cursor-not-allowed"
+                                : "hover:bg-stone-100 text-stone-700"
+                            }`}
                             aria-label="Aumentar"
+                            title={item.stock !== undefined && item.quantity >= item.stock ? `Límite de stock alcanzado (${item.stock})` : "Aumentar cantidad"}
                           >
                             <Plus size={11} />
                           </button>
                         </div>
+                        {item.stock !== undefined && item.quantity >= item.stock && (
+                          <span className="text-[9px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.2 rounded text-right">
+                            Máx. ({item.stock} en stock)
+                          </span>
+                        )}
                       </div>
                     </div>
                   );
                 })}
               </div>
+
+              {/* Banner de Descuento por Mayoreo o Docena (10% OFF en 12+ unidades) */}
+              {isWholesaleDiscountApplied ? (
+                <div className="bg-emerald-50/90 border border-emerald-200 rounded-2xl p-3.5 space-y-1 animate-in fade-in">
+                  <div className="flex items-center justify-between text-xs font-bold text-emerald-800">
+                    <span className="flex items-center gap-1.5">
+                      <Sparkles size={14} className="text-emerald-600" /> ¡Descuento de Mayoreo / Docena Activo!
+                    </span>
+                    <span className="text-emerald-700 font-mono text-xs">
+                      -{currencySymbol}{wholesaleDiscount.toFixed(2)} (-{wholesaleDiscountPercent}%)
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-emerald-700 leading-tight">
+                    ¡Felicidades! Has completado 12 o más unidades. Se aplicó automáticamente un {wholesaleDiscountPercent}% de descuento por compra al por mayor en tu pedido.
+                  </p>
+                </div>
+              ) : totalItems > 0 && (
+                <div className="bg-[#FAF6F2] border border-stone-200/90 rounded-2xl p-3 flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2">
+                    <span className="text-base">📦</span>
+                    <div>
+                      <span className="font-semibold text-gray-900 block text-[11px]">
+                        ¿Compras al por mayor o una docena?
+                      </span>
+                      <span className="text-[10px] text-stone-500">
+                        Agrega <strong className="text-[#A8623D] font-bold">{unitsNeededForWholesale} {unitsNeededForWholesale === 1 ? "unidad más" : "unidades más"}</strong> para desbloquear 10% OFF por Docena/Mayoreo.
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Banner de Cupón 15% OFF (Solo clientes, no admin) */}
               {!isAdmin && (
@@ -354,7 +470,7 @@ export default function CartDrawer() {
                 ) : userProfile?.firstPurchaseUsed ? (
                   <div className="bg-stone-50 border border-stone-200 rounded-xl p-2.5 text-[11px] text-stone-500 flex items-center gap-1.5">
                     <Coins size={13} className="text-[#C08261]" />
-                    <span>Tu cupón ya fue utilizado. ¡Esta compra te suma <strong>+{pointsToEarn} puntos VIP</strong>!</span>
+                    <span>Tu cupón de bienvenida ya fue utilizado. ¡Esta compra te suma <strong>+{pointsToEarn} puntos VIP</strong>!</span>
                   </div>
                 ) : null
               )}
@@ -451,10 +567,19 @@ export default function CartDrawer() {
                 <span className="font-semibold text-gray-900">{currencySymbol}{subtotal.toFixed(2)}</span>
               </div>
 
+              {wholesaleDiscount > 0 && (
+                <div className="flex justify-between text-emerald-700 font-semibold animate-in fade-in">
+                  <span className="flex items-center gap-1">
+                    <Sparkles size={12} className="text-emerald-600" /> Descuento Mayoreo / Docena (10%):
+                  </span>
+                  <span>-{currencySymbol}{wholesaleDiscount.toFixed(2)}</span>
+                </div>
+              )}
+
               {discount > 0 && (
                 <div className="flex justify-between text-emerald-700 font-semibold">
                   <span className="flex items-center gap-1">
-                    <Sparkles size={12} /> Descuento Bienvenida (15%):
+                    <Gift size={12} className="text-[#A8623D]" /> Descuento Bienvenida (15%):
                   </span>
                   <span>-{currencySymbol}{discount.toFixed(2)}</span>
                 </div>

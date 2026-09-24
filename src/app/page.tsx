@@ -440,12 +440,17 @@ export default function Home() {
                     {/* Botones de Acción: Carrito y WhatsApp Directo */}
                     <div className="grid grid-cols-2 gap-1.5 sm:gap-2">
                       <button
+                        disabled={isOutOfStock}
                         onClick={() => addToCart(product, 1)}
-                        className="bg-black hover:bg-stone-800 text-white py-2 sm:py-2.5 px-1.5 sm:px-2 rounded-xl text-[10px] sm:text-xs font-semibold tracking-wider uppercase flex items-center justify-center gap-1 transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] shadow-xs"
-                        title="Añadir a mi bolsa de compras"
+                        className={`py-2 sm:py-2.5 px-1.5 sm:px-2 rounded-xl text-[10px] sm:text-xs font-semibold tracking-wider uppercase flex items-center justify-center gap-1 transition-all duration-200 shadow-xs ${
+                          isOutOfStock
+                            ? "bg-stone-200 text-stone-400 cursor-not-allowed"
+                            : "bg-black hover:bg-stone-800 text-white hover:scale-[1.02] active:scale-[0.98]"
+                        }`}
+                        title={isOutOfStock ? "Producto agotado en inventario" : "Añadir a mi bolsa de compras"}
                       >
                         <ShoppingBag size={12} className="flex-shrink-0" />
-                        <span className="truncate">Bolsa</span>
+                        <span className="truncate">{isOutOfStock ? "Agotado" : "Bolsa"}</span>
                       </button>
 
                       <a
@@ -629,14 +634,22 @@ export default function Home() {
                   </div>
 
                   {/* Stock y Disponibilidad */}
-                  <div className="flex items-center gap-2 mb-4 sm:mb-6">
+                  <div className="flex items-center gap-2 mb-3 sm:mb-4">
                     <span className={`w-2.5 h-2.5 rounded-full ${
                       selectedProduct.stock === 0 ? "bg-red-500" : "bg-emerald-500 animate-pulse"
                     }`}></span>
                     <span className="text-xs font-medium text-stone-700">
                       {selectedProduct.stock === 0
-                        ? "Producto Agotado"
+                        ? "Producto Agotado en Inventario"
                         : `Disponible en Salón (${selectedProduct.stock} unidades en existencia)`}
+                    </span>
+                  </div>
+
+                  {/* Beneficio de Mayoreo / Docena */}
+                  <div className="bg-[#FAF3EC] border border-[#E8D6C6] rounded-xl p-2.5 mb-4 text-[11px] text-stone-700 flex items-center gap-2">
+                    <span className="text-base">📦</span>
+                    <span>
+                      <strong className="text-black font-semibold">10% OFF por Docena:</strong> Si llevas 12 o más unidades (o alcanzas 12 artículos en tu bolsa), se aplica el descuento al por mayor automático.
                     </span>
                   </div>
 
@@ -658,7 +671,8 @@ export default function Home() {
                     <div className="flex items-center border border-stone-200 rounded-xl bg-[#FAF9F7] p-1">
                       <button
                         onClick={() => setModalQty(Math.max(1, modalQty - 1))}
-                        className="w-8 h-8 rounded-lg bg-white hover:bg-stone-100 text-stone-700 flex items-center justify-center transition shadow-2xs"
+                        disabled={selectedProduct.stock === 0}
+                        className="w-8 h-8 rounded-lg bg-white hover:bg-stone-100 text-stone-700 flex items-center justify-center transition shadow-2xs disabled:opacity-40"
                         aria-label="Menos"
                       >
                         <Minus size={14} />
@@ -667,9 +681,19 @@ export default function Home() {
                         {modalQty}
                       </span>
                       <button
-                        onClick={() => setModalQty(modalQty + 1)}
-                        className="w-8 h-8 rounded-lg bg-white hover:bg-stone-100 text-stone-700 flex items-center justify-center transition shadow-2xs"
+                        onClick={() => {
+                          if (modalQty < selectedProduct.stock) {
+                            setModalQty(modalQty + 1);
+                          }
+                        }}
+                        disabled={selectedProduct.stock === 0 || modalQty >= selectedProduct.stock}
+                        className={`w-8 h-8 rounded-lg flex items-center justify-center transition shadow-2xs ${
+                          selectedProduct.stock === 0 || modalQty >= selectedProduct.stock
+                            ? "bg-stone-100 text-stone-300 cursor-not-allowed"
+                            : "bg-white hover:bg-stone-100 text-stone-700"
+                        }`}
                         aria-label="Más"
+                        title={modalQty >= selectedProduct.stock ? `Stock máximo: ${selectedProduct.stock}` : "Aumentar cantidad"}
                       >
                         <Plus size={14} />
                       </button>
@@ -677,14 +701,19 @@ export default function Home() {
 
                     {/* Botón Añadir a la Bolsa */}
                     <button
+                      disabled={selectedProduct.stock === 0}
                       onClick={() => {
                         addToCart(selectedProduct, modalQty);
                         setSelectedProduct(null);
                         setModalQty(1);
                       }}
-                      className="flex-1 bg-black hover:bg-stone-800 text-white py-3.5 px-4 rounded-xl text-xs sm:text-sm font-bold uppercase tracking-wider flex items-center justify-center gap-2 shadow-md hover:scale-[1.01] active:scale-[0.99] transition-all"
+                      className={`flex-1 py-3.5 px-4 rounded-xl text-xs sm:text-sm font-bold uppercase tracking-wider flex items-center justify-center gap-2 shadow-md transition-all ${
+                        selectedProduct.stock === 0
+                          ? "bg-stone-200 text-stone-400 cursor-not-allowed"
+                          : "bg-black hover:bg-stone-800 text-white hover:scale-[1.01] active:scale-[0.99]"
+                      }`}
                     >
-                      <ShoppingBag size={16} /> Añadir a la Bolsa
+                      <ShoppingBag size={16} /> {selectedProduct.stock === 0 ? "Producto Agotado" : "Añadir a la Bolsa"}
                     </button>
                   </div>
 

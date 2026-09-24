@@ -79,6 +79,14 @@ export async function POST(req: NextRequest) {
       }
 
       const prodData = prodDoc.data() || {};
+      const availableStock = prodData.stock !== undefined ? Number(prodData.stock) : 99;
+      if (item.quantity > availableStock) {
+        return NextResponse.json(
+          { error: `No hay suficiente stock para "${prodData.name || "el producto"}". Stock disponible: ${availableStock}.` },
+          { status: 400 }
+        );
+      }
+
       const officialPriceGTQ = Number(prodData.price) || 0;
       let officialPriceUSD = Number(prodData.priceUSD);
       if (!officialPriceUSD || officialPriceUSD <= 0) {
@@ -107,21 +115,29 @@ export async function POST(req: NextRequest) {
 
     subtotal = Math.round(subtotal * 100) / 100;
 
-    // 4. Server-side discount calculation: 15% discount applies to 1 unit of highest priced item
+    // 4. Server-side wholesale discount calculation: 10% for 12+ total items or 12+ of a product (Docena / Mayoreo)
+    const totalOrderUnits = data.items.reduce((sum, it) => sum + it.quantity, 0);
+    const isWholesaleEligible = totalOrderUnits >= 12 || data.items.some(it => it.quantity >= 12);
+    let wholesaleDiscount = 0;
+    if (isWholesaleEligible) {
+      wholesaleDiscount = Math.round(subtotal * 0.10 * 100) / 100;
+    }
+
+    // 5. Server-side welcome coupon discount calculation: 15% discount applies to 1 unit of highest priced item
     let discount = 0;
     if (canUseWelcomeCoupon && highestUnitPrice > 0) {
       discount = Math.round(highestUnitPrice * 0.15 * 100) / 100;
     }
 
-    const total = Math.max(0, Math.round((subtotal - discount) * 100) / 100);
+    const total = Math.max(0, Math.round((subtotal - wholesaleDiscount - discount) * 100) / 100);
 
-    // 5. Server-side points calculation (1 pt per Q10 or 1 pt per $1.25)
+    // 6. Server-side points calculation (1 pt per Q10 or 1 pt per $1.25)
     let pointsEarned = 0;
     if (authUser && !isUserAdmin) {
       pointsEarned = currency === "GTQ" ? Math.floor(total / 10) : Math.floor(total / 1.25);
     }
 
-    // 6. Generate order code and write order document in Firestore
+    // 7. Generate order code and write order document in Firestore
     const orderNumber = `LS-${Date.now().toString().slice(-5)}`;
     const newOrderData = {
       orderNumber,
@@ -134,6 +150,7 @@ export async function POST(req: NextRequest) {
       items: orderItems,
       subtotal,
       discount,
+      wholesaleDiscount,
       couponApplied: canUseWelcomeCoupon && discount > 0,
       couponCode: canUseWelcomeCoupon && discount > 0 ? "BIENVENIDA15" : null,
       total,
@@ -157,6 +174,7 @@ export async function POST(req: NextRequest) {
       total,
       subtotal,
       discount,
+      wholesaleDiscount,
       pointsEarned,
       currency,
       verificationUrl,

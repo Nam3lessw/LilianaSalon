@@ -19,23 +19,23 @@ export default function Navbar() {
 
   return (
     <header className="w-full sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-stone-200">
-      {/* Top Banner de Oferta */}
-      <div className="bg-[#FAF3EC] text-stone-800 text-[11px] sm:text-xs py-2 px-3 sm:px-6 border-b border-stone-200/60 flex items-center justify-center font-medium overflow-hidden">
-        <div className="flex items-center gap-1.5 text-center truncate">
-          <Sparkles size={12} className="text-[#C08261] flex-shrink-0" />
-          <span className="truncate">
-            Envíos en <strong className="font-semibold text-black">Guatemala 🇬🇹 & El Salvador 🇸🇻</strong> {!isAdmin && "• -15% en tu 1ra compra"}
-          </span>
-          {!user && (
+      {/* Top Banner de Oferta: visible solo para visitantes, se oculta al sincronizar la cuenta */}
+      {!user && (
+        <div className="bg-[#FAF3EC] text-stone-800 text-[11px] sm:text-xs py-2 px-3 sm:px-6 border-b border-stone-200/60 flex items-center justify-center font-medium overflow-hidden transition-all duration-300">
+          <div className="flex items-center gap-1.5 text-center truncate">
+            <Sparkles size={12} className="text-[#C08261] flex-shrink-0" />
+            <span className="truncate">
+              Envíos en <strong className="font-semibold text-black">Guatemala 🇬🇹 & El Salvador 🇸🇻</strong> • -15% en tu 1ra compra
+            </span>
             <button
               onClick={() => openAuthModal("register")}
               className="hidden sm:inline underline text-black font-bold hover:text-[#C08261] transition ml-1 whitespace-nowrap"
             >
               Crear Cuenta
             </button>
-          )}
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16 sm:h-20">
