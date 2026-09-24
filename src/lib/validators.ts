@@ -9,6 +9,7 @@ export const CreateOrderSchema = z.object({
   items: z.array(OrderItemSchema).min(1, "El pedido debe contener al menos un producto").max(50, "Máximo 50 ítems por pedido"),
   country: z.enum(["GT", "SV"], { message: "País no válido (GT o SV)" }),
   applyWelcomeCoupon: z.boolean().optional().default(false),
+  applyPointsDiscount: z.boolean().optional().default(false),
   customerName: z.string().trim().min(1, "El nombre es obligatorio").max(100, "Nombre demasiado largo"),
   customerPhone: z.string().trim().max(30).optional().default(""),
   customerEmail: z.string().trim().email("Formato de correo no válido").optional().or(z.literal("")),

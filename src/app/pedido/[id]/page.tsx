@@ -46,6 +46,8 @@ interface OrderDetail {
   wholesaleDiscount?: number;
   couponApplied: boolean;
   couponCode?: string | null;
+  pointsDiscount?: number;
+  pointsRedeemed?: number;
   total: number;
   pointsEarned: number;
   status: "pendiente" | "completada" | "cancelada";
@@ -427,6 +429,15 @@ export default function OrderVerificationPage() {
                     <Gift size={12} /> Cupón 15% (1er producto):
                   </span>
                   <span>-{symbol}{order.discount.toFixed(2)}</span>
+                </div>
+              )}
+
+              {order.pointsDiscount && order.pointsDiscount > 0 && (
+                <div className="flex justify-between text-amber-800 font-semibold">
+                  <span className="flex items-center gap-1">
+                    <Coins size={12} className="text-[#C08261]" /> Descuento Puntos VIP ({order.pointsRedeemed || 0} pts):
+                  </span>
+                  <span>-{symbol}{order.pointsDiscount.toFixed(2)}</span>
                 </div>
               )}
 

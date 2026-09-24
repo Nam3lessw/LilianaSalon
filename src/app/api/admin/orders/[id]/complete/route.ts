@@ -77,8 +77,9 @@ export async function POST(
           const userData = userSnap.data() || {};
           const currentPoints = Number(userData.points) || 0;
           const pointsEarned = Number(orderData.pointsEarned) || 0;
+          const pointsRedeemed = Number(orderData.pointsRedeemed) || 0;
           const updates: Record<string, any> = {
-            points: currentPoints + pointsEarned,
+            points: Math.max(0, currentPoints - pointsRedeemed + pointsEarned),
             updatedAt: FieldValue.serverTimestamp(),
           };
 

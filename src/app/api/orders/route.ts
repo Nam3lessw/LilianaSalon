@@ -129,15 +129,36 @@ export async function POST(req: NextRequest) {
       discount = Math.round(highestUnitPrice * 0.15 * 100) / 100;
     }
 
-    const total = Math.max(0, Math.round((subtotal - wholesaleDiscount - discount) * 100) / 100);
+    const subtotalAfterDiscounts = Math.max(0, Math.round((subtotal - wholesaleDiscount - discount) * 100) / 100);
 
-    // 6. Server-side points calculation (1 pt per Q10 or 1 pt per $1.25)
+    // 6. Server-side points redemption discount (mínimo 250 puntos requeridos)
+    let pointsDiscount = 0;
+    let pointsRedeemed = 0;
+    if (authUser && !isUserAdmin && data.applyPointsDiscount && subtotalAfterDiscounts > 0) {
+      const userSnap = await adminDb.collection("users").doc(authUser.uid).get();
+      const currentPts = Number(userSnap.data()?.points) || 0;
+      if (currentPts >= 250) {
+        if (currency === "GTQ") {
+          const pointsVal = Math.round((currentPts / 10) * 100) / 100;
+          pointsDiscount = Math.min(subtotalAfterDiscounts, pointsVal);
+          pointsRedeemed = Math.round(pointsDiscount * 10);
+        } else {
+          const pointsVal = convertGTQtoUSD(currentPts / 10);
+          pointsDiscount = Math.min(subtotalAfterDiscounts, pointsVal);
+          pointsRedeemed = currentPts;
+        }
+      }
+    }
+
+    const total = Math.max(0, Math.round((subtotalAfterDiscounts - pointsDiscount) * 100) / 100);
+
+    // 7. Server-side points calculation (1 pt per Q10 or 1 pt per $1.25)
     let pointsEarned = 0;
     if (authUser && !isUserAdmin) {
       pointsEarned = currency === "GTQ" ? Math.floor(total / 10) : Math.floor(total / 1.25);
     }
 
-    // 7. Generate order code and write order document in Firestore
+    // 8. Generate order code and write order document in Firestore
     const orderNumber = `LS-${Date.now().toString().slice(-5)}`;
     const newOrderData = {
       orderNumber,
@@ -151,6 +172,8 @@ export async function POST(req: NextRequest) {
       subtotal,
       discount,
       wholesaleDiscount,
+      pointsDiscount,
+      pointsRedeemed,
       couponApplied: canUseWelcomeCoupon && discount > 0,
       couponCode: canUseWelcomeCoupon && discount > 0 ? "BIENVENIDA15" : null,
       total,
@@ -175,6 +198,8 @@ export async function POST(req: NextRequest) {
       subtotal,
       discount,
       wholesaleDiscount,
+      pointsDiscount,
+      pointsRedeemed,
       pointsEarned,
       currency,
       verificationUrl,

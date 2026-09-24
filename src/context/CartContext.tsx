@@ -38,6 +38,14 @@ interface CartContextType {
   setApplyWelcomeCoupon: (val: boolean) => void;
   canApplyWelcomeCoupon: boolean;
   couponDiscountItem: CartItem | null;
+  // Puntos VIP canjeables
+  userPoints: number;
+  canRedeemPoints: boolean;
+  minPointsForRedemption: number;
+  applyPointsDiscount: boolean;
+  setApplyPointsDiscount: (val: boolean) => void;
+  pointsDiscount: number;
+  pointsRedeemed: number;
   currencySymbol: string;
   currencyCode: "GTQ" | "USD";
   getItemUnitPrice: (item: CartItem) => number;
@@ -51,6 +59,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const [items, setItems] = useState<CartItem[]>([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [applyWelcomeCoupon, setApplyWelcomeCoupon] = useState(true);
+  const [applyPointsDiscount, setApplyPointsDiscount] = useState(false);
   const [initialized, setInitialized] = useState(false);
 
   const { country, currencySymbol } = useCountry();
@@ -204,7 +213,34 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  const total = roundToCommercialPrice(Math.max(0, subtotal - wholesaleDiscount - discount));
+  // Subtotal tras descuento de mayoreo y cupón
+  const subtotalAfterDiscounts = Math.max(0, subtotal - wholesaleDiscount - discount);
+
+  // Regla de Puntos VIP: Mínimo 250 puntos requeridos para ser aplicables
+  const minPointsForRedemption = 250;
+  const userPoints = (!isAdmin && userProfile?.points) ? Math.max(0, Number(userProfile.points)) : 0;
+  const canRedeemPoints = userPoints >= minPointsForRedemption;
+
+  let pointsDiscount = 0;
+  let pointsRedeemed = 0;
+
+  if (canRedeemPoints && applyPointsDiscount && subtotalAfterDiscounts > 0) {
+    if (country === "GT") {
+      // 10 puntos = Q1.00 de descuento
+      const maxDiscountPossible = subtotalAfterDiscounts;
+      const pointsValueGTQ = roundToCommercialPrice(userPoints / 10);
+      pointsDiscount = Math.min(maxDiscountPossible, pointsValueGTQ);
+      pointsRedeemed = Math.round(pointsDiscount * 10);
+    } else {
+      // SV (USD): 10 puntos = Q1.00 convertidos a USD
+      const maxDiscountPossible = subtotalAfterDiscounts;
+      const pointsValueUSD = convertGTQtoUSD(userPoints / 10);
+      pointsDiscount = Math.min(maxDiscountPossible, pointsValueUSD);
+      pointsRedeemed = userPoints;
+    }
+  }
+
+  const total = roundToCommercialPrice(Math.max(0, subtotalAfterDiscounts - pointsDiscount));
 
   // Puntos ganados con la compra (Admin no acumula puntos)
   const pointsToEarn = isAdmin ? 0 : (country === "GT"
@@ -234,6 +270,13 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         setApplyWelcomeCoupon,
         canApplyWelcomeCoupon,
         couponDiscountItem,
+        userPoints,
+        canRedeemPoints,
+        minPointsForRedemption,
+        applyPointsDiscount,
+        setApplyPointsDiscount,
+        pointsDiscount,
+        pointsRedeemed,
         currencySymbol,
         currencyCode,
         getItemUnitPrice
