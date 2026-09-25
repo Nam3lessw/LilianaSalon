@@ -274,15 +274,11 @@ export default function CustomerRewardsModal() {
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <h3 className="text-lg sm:text-xl font-serif font-bold text-gray-900 truncate">
-                  {userProfile?.name || user.displayName || (isAdmin ? "Administrador" : "Cliente VIP")}
+                  {userProfile?.name || user.displayName || (isAdmin ? "Administrador" : "Cliente")}
                 </h3>
-                {isAdmin ? (
+                {isAdmin && (
                   <span className="bg-amber-100 text-amber-800 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full flex items-center gap-1 border border-amber-300 shrink-0">
                     <Lock size={10} /> Admin
-                  </span>
-                ) : (
-                  <span className="bg-[#C08261]/15 text-[#8F4E2D] text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full flex items-center gap-1 shrink-0">
-                    <Sparkles size={10} /> VIP
                   </span>
                 )}
               </div>
@@ -535,20 +531,6 @@ export default function CustomerRewardsModal() {
                   </button>
                 </div>
               </form>
-
-              {/* Información Adicional de la Cuenta */}
-              <div className="bg-stone-50 p-3.5 rounded-2xl border border-stone-200/80 text-[11px] text-stone-500 space-y-1">
-                <div className="flex justify-between">
-                  <span>ID de Usuario:</span>
-                  <span className="font-mono text-[10px] text-stone-600 truncate max-w-[180px]">{user.uid}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Tipo de Cuenta:</span>
-                  <span className="font-semibold text-stone-700">
-                    {isAdmin ? "Administrador de Tienda" : "Cliente Liliana VIP"}
-                  </span>
-                </div>
-              </div>
             </div>
           )}
 
