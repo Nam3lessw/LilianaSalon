@@ -17,6 +17,7 @@ export interface UserProfile {
   uid: string;
   name: string;
   email: string;
+  phone?: string;
   role: "admin" | "customer";
   points: number;
   welcomeCoupon: string | null;

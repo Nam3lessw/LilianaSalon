@@ -67,7 +67,7 @@ export default function CartDrawer() {
   if (!isCartOpen) return null;
 
   const effectiveName = userProfile?.name || guestName.trim();
-  const effectivePhone = guestPhone.trim();
+  const effectivePhone = userProfile?.phone || guestPhone.trim();
 
   const handleCheckoutWhatsApp = async () => {
     if (items.length === 0) return;
