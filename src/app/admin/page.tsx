@@ -142,31 +142,14 @@ const DEFAULT_CATEGORIES: Omit<CategoryItem, "id">[] = [
   { name: "Tratamientos", image: "https://images.unsplash.com/photo-1527799820374-dcf8d9d4a388?q=80&w=400&auto=format&fit=crop", order: 6, featured: false }
 ];
 
-const BEAUTY_SUBCATEGORIES: string[] = [
-  "Shampoo",
-  "Acondicionador",
-  "Tratamientos",
-  "Mascarillas",
-  "Alisados",
-  "Aceites & Gotas",
-  "Cuidado Facial",
-  "Protector Térmico",
-  "Ampollas",
-  "Matizador",
-  "Accesorios",
-  "Perfumes"
-];
-
 export default function AdminDashboard() {
   const router = useRouter();
 
   // Navigation tab in Admin
   const [activeTab, setActiveTab] = useState<"products" | "orders" | "loyalty" | "categories">("products");
 
-  // Categories & Priority Management state
-  const [categories, setCategories] = useState<CategoryItem[]>(() =>
-    DEFAULT_CATEGORIES.map((c, i) => ({ id: `default-${i}`, ...c }))
-  );
+  // Categories & Priority Management state (synchronizes strictly with created categories in Firestore)
+  const [categories, setCategories] = useState<CategoryItem[]>([]);
   const [loadingCategories, setLoadingCategories] = useState(false);
   const [categoryName, setCategoryName] = useState("");
   const [categoryImage, setCategoryImage] = useState("");
@@ -205,9 +188,9 @@ export default function AdminDashboard() {
   const [brand, setBrand] = useState("Keratech");
   const [customBrand, setCustomBrand] = useState("");
   const [category, setCategory] = useState("Keratech");
-  const [customCategory, setCustomCategory] = useState("");
-  const [selectedCategories, setSelectedCategories] = useState<string[]>(["Keratech"]);
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [newSubcategoryInput, setNewSubcategoryInput] = useState("");
+  const [addingCategory, setAddingCategory] = useState(false);
 
   const toggleCategory = (catName: string) => {
     setSelectedCategories(prev => {
@@ -219,13 +202,83 @@ export default function AdminDashboard() {
     });
   };
 
-  const handleAddCustomSubcategory = () => {
+  const handleAddCustomSubcategory = async () => {
     const trimmed = newSubcategoryInput.trim();
     if (!trimmed) return;
-    if (!selectedCategories.includes(trimmed)) {
-      setSelectedCategories(prev => [...prev, trimmed]);
+    
+    // Normalizar capitalización (primera letra mayúscula)
+    const formattedName = trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+    
+    // Marcar como seleccionada localmente de inmediato
+    if (!selectedCategories.includes(formattedName)) {
+      setSelectedCategories(prev => [...prev, formattedName]);
     }
     setNewSubcategoryInput("");
+
+    // Verificar si ya existe en la lista de categorías creadas
+    const alreadyExists = categories.some(
+      c => c.name.trim().toLowerCase() === formattedName.toLowerCase()
+    );
+
+    if (!alreadyExists) {
+      setAddingCategory(true);
+      try {
+        const nextOrder = categories.length > 0 ? Math.max(...categories.map(c => c.order || 0)) + 1 : 1;
+        const newCatData = {
+          name: formattedName,
+          image: "https://images.unsplash.com/photo-1522337660859-02fbefca4702?q=80&w=400&auto=format&fit=crop",
+          order: nextOrder,
+          featured: false
+        };
+
+        let newId = "";
+        if (db) {
+          try {
+            const docRef = await addDoc(collection(db, "categories"), {
+              ...newCatData,
+              createdAt: serverTimestamp()
+            });
+            newId = docRef.id;
+          } catch (clientErr) {
+            console.warn("Client Firestore error creating category, attempting API fallback:", clientErr);
+          }
+        }
+
+        if (!newId) {
+          const idToken = await auth?.currentUser?.getIdToken();
+          const res = await fetch("/api/categories", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              ...(idToken ? { "Authorization": `Bearer ${idToken}` } : {})
+            },
+            body: JSON.stringify({
+              action: "create",
+              ...newCatData
+            })
+          });
+          if (res.ok) {
+            const data = await res.json();
+            newId = data.id || `cat-${Date.now()}`;
+          }
+        }
+
+        const createdItem: CategoryItem = {
+          id: newId || `cat-${Date.now()}`,
+          ...newCatData
+        };
+
+        setCategories(prev => [...prev, createdItem]);
+        setStatusMessage({
+          type: "success",
+          text: `Categoría "${formattedName}" creada y sincronizada exitosamente.`
+        });
+      } catch (err: any) {
+        console.error("Error creating custom category:", err);
+      } finally {
+        setAddingCategory(false);
+      }
+    }
   };
 
   const [price, setPrice] = useState("");
@@ -553,8 +606,24 @@ export default function AdminDashboard() {
     if (!window.confirm(confirmMsg)) return;
 
     try {
+      let deleted = false;
       if (db) {
-        await deleteDoc(doc(db, "categories", catId));
+        try {
+          await deleteDoc(doc(db, "categories", catId));
+          deleted = true;
+        } catch (clientErr) {
+          console.warn("Client deleteDoc for category failed, trying server API fallback:", clientErr);
+        }
+      }
+      if (!deleted) {
+        const idToken = await auth?.currentUser?.getIdToken();
+        const res = await fetch(`/api/categories?id=${encodeURIComponent(catId)}`, {
+          method: "DELETE",
+          headers: {
+            ...(idToken ? { "Authorization": `Bearer ${idToken}` } : {})
+          }
+        });
+        if (!res.ok) throw new Error("No se pudo eliminar la categoría.");
       }
       setStatusMessage({ type: "success", text: `Categoría "${catName}" eliminada.` });
       if (editingCategoryId === catId) resetCategoryForm();
@@ -1036,14 +1105,14 @@ export default function AdminDashboard() {
 
     try {
       const finalBrand = brand === "Otra" ? (customBrand.trim() || "Liliana Salon") : brand;
-      const finalCategoriesList = Array.from(new Set([
-        finalBrand,
-        ...selectedCategories.filter(Boolean)
-      ]));
+      // Las categorías asignadas serán exactamente las seleccionadas por el administrador
+      const finalCategoriesList = selectedCategories.length > 0
+        ? selectedCategories
+        : [finalBrand];
       const finalPrimaryCategory = finalCategoriesList[0] || finalBrand;
       const finalImageUrl = await uploadImageIfNeeded();
 
-      // Auto-registrar categorías nuevas en Firestore si no existen aún
+      // Sincronizar en Firestore cualquier categoría seleccionada si aún no estuviera registrada
       if (db) {
         for (const cat of finalCategoriesList) {
           if (!categories.some(c => c.name.toLowerCase() === cat.toLowerCase())) {
@@ -1051,9 +1120,9 @@ export default function AdminDashboard() {
               const nextOrder = categories.length > 0 ? Math.max(...categories.map(c => c.order || 0)) + 1 : 1;
               await addDoc(collection(db, "categories"), {
                 name: cat,
-                image: finalImageUrl || "https://images.unsplash.com/photo-1599305090598-fe179d501227?q=80&w=400&auto=format&fit=crop",
+                image: finalImageUrl || "https://images.unsplash.com/photo-1522337660859-02fbefca4702?q=80&w=400&auto=format&fit=crop",
                 order: nextOrder,
-                featured: ["Keratech", "IvoGa", "Shampoo", "Tratamientos", "Alisados"].includes(cat),
+                featured: false,
                 createdAt: serverTimestamp()
               });
             } catch (catErr) {
@@ -1204,11 +1273,10 @@ export default function AdminDashboard() {
     // Resolve categories array
     const initialCats: string[] = Array.isArray(p.categories) && p.categories.length > 0
       ? p.categories
-      : Array.from(new Set([p.brand, p.category].filter(Boolean) as string[]));
+      : (p.category ? [p.category] : []);
     
-    setSelectedCategories(initialCats.length > 0 ? initialCats : [productBrand]);
+    setSelectedCategories(initialCats);
     setCategory(p.category || productBrand);
-    setCustomCategory("");
     
     setPrice(p.price.toString());
     setPriceUSD(p.priceUSD ? p.priceUSD.toString() : (p.price ? convertGTQtoUSD(p.price).toString() : ""));
@@ -1230,8 +1298,7 @@ export default function AdminDashboard() {
     setBrand("Keratech");
     setCustomBrand("");
     setCategory("Keratech");
-    setCustomCategory("");
-    setSelectedCategories(["Keratech"]);
+    setSelectedCategories([]);
     setNewSubcategoryInput("");
     setPrice("");
     setPriceUSD("");
@@ -1410,11 +1477,7 @@ export default function AdminDashboard() {
                     <select 
                       value={brand} 
                       onChange={e => {
-                        const newBrand = e.target.value;
-                        setBrand(newBrand);
-                        if (newBrand && newBrand !== "Otra") {
-                          setSelectedCategories(prev => prev.includes(newBrand) ? prev : [newBrand, ...prev]);
-                        }
+                        setBrand(e.target.value);
                       }} 
                       className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-black"
                     >
@@ -1450,7 +1513,7 @@ export default function AdminDashboard() {
                   </div>
                 </div>
 
-                {/* Categorías y Subcategorías (Selección Múltiple) */}
+                {/* Categorías y Subcategorías (Sincronizado únicamente con las creadas) */}
                 <div className="space-y-2.5 p-3.5 bg-stone-50/70 rounded-xl border border-stone-200/80">
                   <div className="flex items-center justify-between">
                     <div>
@@ -1470,34 +1533,39 @@ export default function AdminDashboard() {
                     </button>
                   </div>
 
-                  {/* Pills Interactivas */}
+                  {/* Pills Interactivas (Solo las creadas en el sistema) */}
                   <div className="flex flex-wrap gap-1.5 pt-1">
-                    {Array.from(new Set([
-                      ...BEAUTY_SUBCATEGORIES,
-                      ...categories.map(c => c.name),
-                      ...selectedCategories
-                    ])).map((cat) => {
-                      const isSelected = selectedCategories.includes(cat);
-                      return (
-                        <button
-                          key={cat}
-                          type="button"
-                          onClick={() => toggleCategory(cat)}
-                          className={`text-xs px-2.5 py-1.5 rounded-full border transition-all flex items-center gap-1.5 cursor-pointer select-none ${
-                            isSelected
-                              ? "bg-[#FAF3EC] text-[#B85728] border-[#C08261] font-bold shadow-2xs ring-1 ring-[#C08261]/20"
-                              : "bg-white text-stone-600 border-stone-200 hover:border-stone-400 hover:text-black"
-                          }`}
-                        >
-                          {isSelected ? (
-                            <Check size={12} className="text-[#B85728] stroke-[3]" />
-                          ) : (
-                            <Plus size={11} className="text-stone-400" />
-                          )}
-                          <span>{cat}</span>
-                        </button>
-                      );
-                    })}
+                    {categories.length === 0 && selectedCategories.length === 0 ? (
+                      <p className="text-xs text-stone-400 italic py-1">
+                        No hay categorías creadas aún. Escribe una abajo para agregarla o ve a Administrar.
+                      </p>
+                    ) : (
+                      Array.from(new Set([
+                        ...categories.map(c => c.name),
+                        ...selectedCategories
+                      ])).map((cat) => {
+                        const isSelected = selectedCategories.includes(cat);
+                        return (
+                          <button
+                            key={cat}
+                            type="button"
+                            onClick={() => toggleCategory(cat)}
+                            className={`text-xs px-2.5 py-1.5 rounded-full border transition-all flex items-center gap-1.5 cursor-pointer select-none ${
+                              isSelected
+                                ? "bg-[#FAF3EC] text-[#B85728] border-[#C08261] font-bold shadow-2xs ring-1 ring-[#C08261]/20"
+                                : "bg-white text-stone-600 border-stone-200 hover:border-stone-400 hover:text-black"
+                            }`}
+                          >
+                            {isSelected ? (
+                              <Check size={12} className="text-[#B85728] stroke-[3]" />
+                            ) : (
+                              <Plus size={11} className="text-stone-400" />
+                            )}
+                            <span>{cat}</span>
+                          </button>
+                        );
+                      })
+                    )}
                   </div>
 
                   {/* Añadir subcategoría al vuelo */}
@@ -1512,20 +1580,23 @@ export default function AdminDashboard() {
                           handleAddCustomSubcategory();
                         }
                       }}
-                      placeholder="Escribe otra subcategoría (ej. Termoprotector, Ampollas...)"
+                      placeholder="Escribe otra categoría o subcategoría..."
                       className="text-xs px-3 py-2 border border-stone-200 rounded-lg flex-1 focus:outline-none focus:ring-1 focus:ring-black bg-white"
+                      disabled={addingCategory}
                     />
                     <button
                       type="button"
                       onClick={handleAddCustomSubcategory}
-                      className="px-3 py-2 bg-stone-200 hover:bg-stone-300 text-stone-800 text-xs font-semibold rounded-lg transition"
+                      disabled={addingCategory || !newSubcategoryInput.trim()}
+                      className="px-3.5 py-2 bg-stone-900 hover:bg-black disabled:opacity-50 text-white text-xs font-semibold rounded-lg transition flex items-center gap-1 cursor-pointer shrink-0"
                     >
-                      + Agregar
+                      <Plus size={12} />
+                      <span>{addingCategory ? "Creando..." : "+ Agregar"}</span>
                     </button>
                   </div>
 
                   <div className="text-[11px] text-stone-500 pt-0.5">
-                    Seleccionadas ({selectedCategories.length}): <span className="font-semibold text-stone-800">{selectedCategories.join(", ") || "Ninguna (marca al menos una)"}</span>
+                    Seleccionadas ({selectedCategories.length}): <span className="font-semibold text-stone-800">{selectedCategories.join(", ") || "Ninguna seleccionada"}</span>
                   </div>
                 </div>
 

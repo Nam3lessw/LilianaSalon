@@ -17,13 +17,7 @@ export interface CategoryItem {
   featured: boolean;
 }
 
-const DEFAULT_CATEGORIES: CategoryItem[] = [
-  { id: "1", name: "Keratech", image: "https://images.unsplash.com/photo-1599305090598-fe179d501227?q=80&w=400&auto=format&fit=crop", order: 1, featured: true },
-  { id: "2", name: "IvoGa", image: "https://images.unsplash.com/photo-1620916566398-39f1143ab7be?q=80&w=400&auto=format&fit=crop", order: 2, featured: true },
-  { id: "3", name: "Cuidado Facial", image: "https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?q=80&w=400&auto=format&fit=crop", order: 3, featured: true },
-  { id: "4", name: "Accesorios", image: "https://images.unsplash.com/photo-1522337660859-02fbefca4702?q=80&w=400&auto=format&fit=crop", order: 4, featured: true },
-  { id: "5", name: "Perfumes", image: "https://images.unsplash.com/photo-1592945403244-b3fbafd7f539?q=80&w=400&auto=format&fit=crop", order: 5, featured: true },
-];
+const DEFAULT_CATEGORIES: CategoryItem[] = [];
 
 export default function Home() {
   const { user, userProfile, isAdmin, openAuthModal, setCustomerDrawerOpen } = useAuth();

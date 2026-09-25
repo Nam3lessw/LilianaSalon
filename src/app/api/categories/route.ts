@@ -138,9 +138,40 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, message: "Orden actualizado exitosamente." });
     }
 
+    if (action === "delete") {
+      const { id } = body;
+      if (!id || typeof id !== "string") {
+        return NextResponse.json({ error: "ID de categoría requerido." }, { status: 400 });
+      }
+      await adminDb.collection("categories").doc(id).delete();
+      return NextResponse.json({ success: true, message: "Categoría eliminada exitosamente." });
+    }
+
     return NextResponse.json({ error: "Acción no reconocida." }, { status: 400 });
   } catch (error: any) {
     console.error("Error in POST /api/categories:", error);
     return NextResponse.json({ error: error.message || "Error procesando solicitud de categorías." }, { status: 500 });
+  }
+}
+
+export async function DELETE(req: NextRequest) {
+  try {
+    const adminUser = await verifyAdminAuthToken(req);
+    if (!adminUser) {
+      return NextResponse.json(
+        { error: "No autorizado. Se requieren credenciales de administrador." },
+        { status: 403 }
+      );
+    }
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id");
+    if (!id) {
+      return NextResponse.json({ error: "ID de categoría requerido." }, { status: 400 });
+    }
+    await adminDb.collection("categories").doc(id).delete();
+    return NextResponse.json({ success: true, message: "Categoría eliminada exitosamente." });
+  } catch (error: any) {
+    console.error("Error in DELETE /api/categories:", error);
+    return NextResponse.json({ error: error.message || "Error al eliminar categoría." }, { status: 500 });
   }
 }
