@@ -23,6 +23,14 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // --- CATEGORIES ---
+    // Visitors and customers can read categories to browse the catalog.
+    // ONLY authenticated administrators can create, update, or delete categories.
+    match /categories/{categoryId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
     // --- 2. SETTINGS ---
     // Store settings (loyalty config, exchange rates, etc.) are publicly readable.
     // ONLY administrators can modify store settings.

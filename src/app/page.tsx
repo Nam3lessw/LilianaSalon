@@ -9,12 +9,29 @@ import { useAuth } from "@/context/AuthContext";
 import { useCountry } from "@/context/CountryContext";
 import { useCart } from "@/context/CartContext";
 
+export interface CategoryItem {
+  id: string;
+  name: string;
+  image?: string;
+  order: number;
+  featured: boolean;
+}
+
+const DEFAULT_CATEGORIES: CategoryItem[] = [
+  { id: "1", name: "Keratech", image: "https://images.unsplash.com/photo-1599305090598-fe179d501227?q=80&w=400&auto=format&fit=crop", order: 1, featured: true },
+  { id: "2", name: "IvoGa", image: "https://images.unsplash.com/photo-1620916566398-39f1143ab7be?q=80&w=400&auto=format&fit=crop", order: 2, featured: true },
+  { id: "3", name: "Cuidado Facial", image: "https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?q=80&w=400&auto=format&fit=crop", order: 3, featured: true },
+  { id: "4", name: "Accesorios", image: "https://images.unsplash.com/photo-1522337660859-02fbefca4702?q=80&w=400&auto=format&fit=crop", order: 4, featured: true },
+  { id: "5", name: "Perfumes", image: "https://images.unsplash.com/photo-1592945403244-b3fbafd7f539?q=80&w=400&auto=format&fit=crop", order: 5, featured: true },
+];
+
 export default function Home() {
   const { user, userProfile, isAdmin, openAuthModal, setCustomerDrawerOpen } = useAuth();
   const { country, currency, currencySymbol, countryName, countryFlag, formatPrice, getRawPrice } = useCountry();
   const { addToCart, setIsCartOpen, totalItems, total } = useCart();
 
   const [products, setProducts] = useState<Product[]>([]);
+  const [categories, setCategories] = useState<CategoryItem[]>(DEFAULT_CATEGORIES);
   const [selectedCategory, setSelectedCategory] = useState<string>("TODOS");
   const [loading, setLoading] = useState(true);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
@@ -61,7 +78,23 @@ export default function Home() {
         setLoading(false);
       }
     };
+    const fetchCategories = async () => {
+      try {
+        if (db) {
+          const snap = await getDocs(collection(db, "categories"));
+          if (!snap.empty) {
+            const list = snap.docs.map(d => ({ id: d.id, ...d.data() } as CategoryItem));
+            list.sort((a, b) => (a.order || 0) - (b.order || 0));
+            setCategories(list);
+          }
+        }
+      } catch (err) {
+        console.error("Error fetching categories for store", err);
+      }
+    };
+
     fetchProducts();
+    fetchCategories();
   }, []);
 
   const defaultProducts: Product[] = [
@@ -127,7 +160,7 @@ export default function Home() {
     }
   ];
 
-  const categoriesList = ["TODOS", "Keratech", "IvoGa", "Cuidado Facial", "Accesorios", "Perfumes"];
+  const categoriesList = ["TODOS", ...categories.map(c => c.name)];
 
   const filteredProducts = selectedCategory === "TODOS"
     ? products
@@ -285,21 +318,13 @@ export default function Home() {
         <div className="w-12 h-0.5 bg-[#C08261] mx-auto mb-8 sm:mb-12"></div>
 
         <div className="flex overflow-x-auto gap-4 sm:gap-10 pb-4 scrollbar-none snap-x snap-mandatory px-2 justify-start sm:justify-center">
-          {[
-            { name: "Keratech", img: "https://images.unsplash.com/photo-1599305090598-fe179d501227?q=80&w=400&auto=format&fit=crop" },
-            { name: "IvoGa", img: "https://images.unsplash.com/photo-1620916566398-39f1143ab7be?q=80&w=400&auto=format&fit=crop" },
-            { name: "Cuidado Facial", img: "https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?q=80&w=400&auto=format&fit=crop" },
-            { name: "Accesorios", img: "https://images.unsplash.com/photo-1522337660859-02fbefca4702?q=80&w=400&auto=format&fit=crop" },
-            { name: "Ofertas", img: "https://images.unsplash.com/photo-1608248543803-ba4f8c70ae0b?q=80&w=400&auto=format&fit=crop" }
-          ].map((cat) => (
+          {categories
+            .filter(cat => cat.featured !== false)
+            .map((cat) => (
             <button
-              key={cat.name}
+              key={cat.id || cat.name}
               onClick={() => {
-                if (cat.name === "Ofertas") {
-                  setSelectedCategory("TODOS");
-                } else {
-                  setSelectedCategory(cat.name);
-                }
+                setSelectedCategory(cat.name);
                 const elem = document.getElementById("catalogo");
                 elem?.scrollIntoView({ behavior: "smooth" });
               }}
@@ -308,7 +333,7 @@ export default function Home() {
               <div className="w-24 h-24 sm:w-36 sm:h-36 md:w-40 md:h-40 rounded-full border border-stone-200 bg-white mb-2 sm:mb-4 flex items-center justify-center overflow-hidden group-hover:border-[#C08261] group-hover:shadow-lg transition-all duration-500 p-1 shadow-xs">
                 <div className="w-full h-full rounded-full overflow-hidden relative">
                   <img 
-                    src={cat.img} 
+                    src={cat.image || "https://images.unsplash.com/photo-1599305090598-fe179d501227?q=80&w=400&auto=format&fit=crop"} 
                     alt={cat.name} 
                     className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 ease-out" 
                   />

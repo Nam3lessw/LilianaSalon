@@ -47,10 +47,23 @@ import {
   Phone,
   X,
   Search,
-  ShieldCheck
+  ShieldCheck,
+  Layers,
+  ArrowUp,
+  ArrowDown,
+  Star
 } from "lucide-react";
 import Link from "next/link";
 import { convertGTQtoUSD, convertUSDtoGTQ, roundToCommercialPrice, DEFAULT_EXCHANGE_RATE } from "@/lib/currency";
+
+export interface CategoryItem {
+  id: string;
+  name: string;
+  image?: string;
+  order: number;
+  featured: boolean;
+  createdAt?: any;
+}
 
 export interface Product {
   id: string;
@@ -118,11 +131,31 @@ export interface OrderReceipt {
   createdAt: any;
 }
 
+const DEFAULT_CATEGORIES: Omit<CategoryItem, "id">[] = [
+  { name: "Keratech", image: "https://images.unsplash.com/photo-1599305090598-fe179d501227?q=80&w=400&auto=format&fit=crop", order: 1, featured: true },
+  { name: "IvoGa", image: "https://images.unsplash.com/photo-1620916566398-39f1143ab7be?q=80&w=400&auto=format&fit=crop", order: 2, featured: true },
+  { name: "Cuidado Facial", image: "https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?q=80&w=400&auto=format&fit=crop", order: 3, featured: true },
+  { name: "Accesorios", image: "https://images.unsplash.com/photo-1522337660859-02fbefca4702?q=80&w=400&auto=format&fit=crop", order: 4, featured: true },
+  { name: "Perfumes", image: "https://images.unsplash.com/photo-1592945403244-b3fbafd7f539?q=80&w=400&auto=format&fit=crop", order: 5, featured: true },
+  { name: "Tratamientos", image: "https://images.unsplash.com/photo-1527799820374-dcf8d9d4a388?q=80&w=400&auto=format&fit=crop", order: 6, featured: false }
+];
+
 export default function AdminDashboard() {
   const router = useRouter();
 
   // Navigation tab in Admin
-  const [activeTab, setActiveTab] = useState<"products" | "orders" | "loyalty">("products");
+  const [activeTab, setActiveTab] = useState<"products" | "orders" | "loyalty" | "categories">("products");
+
+  // Categories & Priority Management state
+  const [categories, setCategories] = useState<CategoryItem[]>([]);
+  const [categoryName, setCategoryName] = useState("");
+  const [categoryImage, setCategoryImage] = useState("");
+  const [categoryFeatured, setCategoryFeatured] = useState(true);
+  const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
+  const [savingCategory, setSavingCategory] = useState(false);
+  const [categoryImageFile, setCategoryImageFile] = useState<File | null>(null);
+  const [categoryImagePreview, setCategoryImagePreview] = useState("");
+  const categoryFileInputRef = useRef<HTMLInputElement>(null);
 
   // Orders & Receipts state
   const [orders, setOrders] = useState<OrderReceipt[]>([]);
@@ -282,6 +315,197 @@ export default function AdminDashboard() {
     }
   };
 
+  const fetchCategories = async () => {
+    try {
+      if (db) {
+        const querySnapshot = await getDocs(collection(db, "categories"));
+        if (querySnapshot.empty) {
+          // Inicializar categorías por defecto si no existen aún en Firestore
+          const seeded: CategoryItem[] = [];
+          for (const cat of DEFAULT_CATEGORIES) {
+            const docRef = await addDoc(collection(db, "categories"), {
+              ...cat,
+              createdAt: serverTimestamp()
+            });
+            seeded.push({ id: docRef.id, ...cat });
+          }
+          seeded.sort((a, b) => a.order - b.order);
+          setCategories(seeded);
+        } else {
+          const list = querySnapshot.docs.map(d => ({ id: d.id, ...d.data() } as CategoryItem));
+          list.sort((a, b) => (a.order || 0) - (b.order || 0));
+          setCategories(list);
+        }
+      }
+    } catch (e: any) {
+      console.error("Error fetching categories", e);
+    }
+  };
+
+  const handleCategoryFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setCategoryImageFile(file);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const result = reader.result as string;
+        setCategoryImagePreview(result);
+        setCategoryImage(result);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const uploadCategoryImageIfNeeded = async (): Promise<string> => {
+    if (categoryImageFile && storage) {
+      try {
+        const storageRef = ref(storage, `categories/${Date.now()}_${categoryImageFile.name}`);
+        const snapshot = await uploadBytes(storageRef, categoryImageFile);
+        return await getDownloadURL(snapshot.ref);
+      } catch (err) {
+        console.warn("Category storage fallback:", err);
+        return categoryImagePreview || categoryImage;
+      }
+    }
+    return categoryImage || categoryImagePreview || "https://images.unsplash.com/photo-1599305090598-fe179d501227?q=80&w=400&auto=format&fit=crop";
+  };
+
+  const handleSaveCategory = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!categoryName.trim()) {
+      setStatusMessage({ type: "error", text: "Por favor ingresa un nombre para la categoría." });
+      return;
+    }
+
+    setSavingCategory(true);
+    setStatusMessage(null);
+
+    try {
+      const finalImg = await uploadCategoryImageIfNeeded();
+      const cleanName = categoryName.trim();
+
+      if (db) {
+        if (editingCategoryId) {
+          await updateDoc(doc(db, "categories", editingCategoryId), {
+            name: cleanName,
+            image: finalImg,
+            featured: categoryFeatured,
+            updatedAt: serverTimestamp()
+          });
+          setStatusMessage({ type: "success", text: `¡Categoría "${cleanName}" actualizada exitosamente!` });
+        } else {
+          const nextOrder = categories.length > 0 ? Math.max(...categories.map(c => c.order || 0)) + 1 : 1;
+          await addDoc(collection(db, "categories"), {
+            name: cleanName,
+            image: finalImg,
+            order: nextOrder,
+            featured: categoryFeatured,
+            createdAt: serverTimestamp()
+          });
+          setStatusMessage({ type: "success", text: `¡Categoría "${cleanName}" creada exitosamente!` });
+        }
+      }
+
+      resetCategoryForm();
+      await fetchCategories();
+    } catch (err: any) {
+      console.error("Error saving category:", err);
+      setStatusMessage({ type: "error", text: "Error al guardar categoría: " + err.message });
+    } finally {
+      setSavingCategory(false);
+    }
+  };
+
+  const resetCategoryForm = () => {
+    setCategoryName("");
+    setCategoryImage("");
+    setCategoryFeatured(true);
+    setEditingCategoryId(null);
+    setCategoryImageFile(null);
+    setCategoryImagePreview("");
+    if (categoryFileInputRef.current) categoryFileInputRef.current.value = "";
+  };
+
+  const handleEditCategory = (cat: CategoryItem) => {
+    setEditingCategoryId(cat.id);
+    setCategoryName(cat.name);
+    setCategoryImage(cat.image || "");
+    setCategoryImagePreview(cat.image || "");
+    setCategoryFeatured(cat.featured ?? true);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const handleDeleteCategory = async (catId: string, catName: string) => {
+    const productsInCat = products.filter(p => (p.brand || p.category)?.toLowerCase() === catName.toLowerCase()).length;
+    let confirmMsg = `¿Estás seguro de eliminar la categoría "${catName}"?`;
+    if (productsInCat > 0) {
+      confirmMsg += `\n\nAdvertencia: Hay ${productsInCat} producto(s) asignados a esta categoría.`;
+    }
+    if (!window.confirm(confirmMsg)) return;
+
+    try {
+      if (db) {
+        await deleteDoc(doc(db, "categories", catId));
+      }
+      setStatusMessage({ type: "success", text: `Categoría "${catName}" eliminada.` });
+      if (editingCategoryId === catId) resetCategoryForm();
+      await fetchCategories();
+    } catch (err: any) {
+      console.error("Error deleting category:", err);
+      setStatusMessage({ type: "error", text: "Error al eliminar categoría: " + err.message });
+    }
+  };
+
+  const handleMoveCategory = async (index: number, direction: "up" | "down") => {
+    const targetIndex = direction === "up" ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= categories.length) return;
+
+    const currentCat = categories[index];
+    const targetCat = categories[targetIndex];
+
+    const currentOrder = currentCat.order;
+    const targetOrder = targetCat.order;
+
+    // Swap local
+    const newCategories = [...categories];
+    newCategories[index] = { ...targetCat, order: currentOrder };
+    newCategories[targetIndex] = { ...currentCat, order: targetOrder };
+    newCategories.sort((a, b) => a.order - b.order);
+    setCategories(newCategories);
+
+    try {
+      if (db) {
+        await updateDoc(doc(db, "categories", currentCat.id), { order: targetOrder });
+        await updateDoc(doc(db, "categories", targetCat.id), { order: currentOrder });
+      }
+      setStatusMessage({ 
+        type: "success", 
+        text: `Orden actualizado: "${currentCat.name}" se movió ${direction === "up" ? "hacia arriba" : "hacia abajo"}.` 
+      });
+    } catch (err: any) {
+      console.error("Error updating category order:", err);
+      setStatusMessage({ type: "error", text: "Error al actualizar orden: " + err.message });
+      await fetchCategories();
+    }
+  };
+
+  const handleToggleFeaturedCategory = async (cat: CategoryItem) => {
+    const newFeatured = !cat.featured;
+    setCategories(prev => prev.map(c => c.id === cat.id ? { ...c, featured: newFeatured } : c));
+    try {
+      if (db) {
+        await updateDoc(doc(db, "categories", cat.id), { featured: newFeatured });
+      }
+      setStatusMessage({
+        type: "success",
+        text: `Categoría "${cat.name}" ${newFeatured ? "ahora es Destacada en Portada ★" : "ya no es Destacada"}.`
+      });
+    } catch (err: any) {
+      console.error("Error toggling featured category:", err);
+      await fetchCategories();
+    }
+  };
+
   // Verificación estricta de sesión y permisos de administrador con Custom Claims
   useEffect(() => {
     if (!auth) {
@@ -304,6 +528,7 @@ export default function AdminDashboard() {
           fetchProducts();
           fetchLoyaltyData();
           fetchOrders();
+          fetchCategories();
         } else {
           router.push("/admin/login?error=unauthorized");
         }
@@ -693,6 +918,23 @@ export default function AdminDashboard() {
       const finalCategory = category === "Otra" ? (customCategory.trim() || "General") : category;
       const finalImageUrl = await uploadImageIfNeeded();
 
+      // Auto-registrar categoría en Firestore si se creó como personalizada
+      if (db && finalCategory && !categories.some(c => c.name.toLowerCase() === finalCategory.toLowerCase())) {
+        try {
+          const nextOrder = categories.length > 0 ? Math.max(...categories.map(c => c.order || 0)) + 1 : 1;
+          await addDoc(collection(db, "categories"), {
+            name: finalCategory,
+            image: finalImageUrl || "https://images.unsplash.com/photo-1599305090598-fe179d501227?q=80&w=400&auto=format&fit=crop",
+            order: nextOrder,
+            featured: true,
+            createdAt: serverTimestamp()
+          });
+          fetchCategories();
+        } catch (catErr) {
+          console.warn("Could not auto-register category:", catErr);
+        }
+      }
+
       const parsedPriceQ = parseFloat(price) || 0;
       const parsedPriceUSD = priceUSD ? parseFloat(priceUSD) : convertGTQtoUSD(parsedPriceQ);
       const parsedOldPriceQ = oldPrice ? parseFloat(oldPrice) : null;
@@ -852,6 +1094,7 @@ export default function AdminDashboard() {
                 fetchProducts();
                 fetchLoyaltyData();
                 fetchOrders();
+                fetchCategories();
               }}
               className="text-xs text-gray-600 hover:text-black flex items-center gap-1 p-2 rounded-lg hover:bg-stone-100 transition"
               title="Refrescar datos"
@@ -878,6 +1121,16 @@ export default function AdminDashboard() {
             }`}
           >
             <Package size={15} /> Productos & Inventario ({products.length})
+          </button>
+          <button
+            onClick={() => setActiveTab("categories")}
+            className={`py-3 flex items-center gap-2 border-b-2 transition whitespace-nowrap ${
+              activeTab === "categories" 
+                ? "border-black text-black font-bold" 
+                : "border-transparent text-stone-400 hover:text-stone-700"
+            }`}
+          >
+            <Layers size={15} className="text-[#C08261]" /> Categorías & Destacados ({categories.length})
           </button>
           <button
             onClick={() => setActiveTab("orders")}
@@ -960,20 +1213,27 @@ export default function AdminDashboard() {
                 {/* Categoría / Marca */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1.5">
-                      Categoría / Marca *
-                    </label>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                        Categoría / Marca *
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab("categories")}
+                        className="text-[10px] text-[#C08261] hover:underline font-bold"
+                      >
+                        + Administrar
+                      </button>
+                    </div>
                     <select 
                       value={category} 
                       onChange={e => setCategory(e.target.value)} 
                       className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-black"
                     >
-                      <option value="Keratech">Keratech</option>
-                      <option value="IvoGa">IvoGa</option>
-                      <option value="Cuidado Facial">Cuidado Facial</option>
-                      <option value="Accesorios">Accesorios</option>
-                      <option value="Perfumes">Perfumes</option>
-                      <option value="Otra">Otra (personalizada)...</option>
+                      {categories.map(c => (
+                        <option key={c.id} value={c.name}>{c.name}</option>
+                      ))}
+                      <option value="Otra">➕ Otra (escribir nueva)...</option>
                     </select>
                   </div>
 
@@ -1974,6 +2234,254 @@ export default function AdminDashboard() {
                       ))}
                     </tbody>
                   </table>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* TAB 4: GESTOR DE CATEGORÍAS & DESTACADOS */}
+        {activeTab === "categories" && (
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+            {/* Formulario de Creación / Edición */}
+            <div className="bg-white p-6 sm:p-8 rounded-2xl shadow-sm border border-stone-200 lg:col-span-5">
+              <div className="flex justify-between items-center mb-6 border-b border-stone-100 pb-4">
+                <div>
+                  <h2 className="text-lg font-serif font-medium flex items-center gap-2">
+                    <Layers size={18} className="text-[#C08261]" />
+                    {editingCategoryId ? "Editar Categoría" : "Crear Nueva Categoría"}
+                  </h2>
+                  <p className="text-xs text-gray-500">
+                    {editingCategoryId 
+                      ? "Modifica el nombre, imagen o posición de la categoría." 
+                      : "Agrega nuevas marcas o categorías a la tienda."}
+                  </p>
+                </div>
+                {editingCategoryId && (
+                  <button 
+                    type="button" 
+                    onClick={resetCategoryForm} 
+                    className="text-xs text-stone-500 hover:text-black underline"
+                  >
+                    Nueva
+                  </button>
+                )}
+              </div>
+
+              <form onSubmit={handleSaveCategory} className="space-y-4">
+                {/* Nombre */}
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1.5">
+                    Nombre de la Categoría *
+                  </label>
+                  <input
+                    required
+                    type="text"
+                    value={categoryName}
+                    onChange={e => setCategoryName(e.target.value)}
+                    placeholder="Ej. Tratamientos Capilares, Maquillaje..."
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-black"
+                  />
+                </div>
+
+                {/* Imagen */}
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1.5">
+                    Imagen de Portada (Para carrusel circular)
+                  </label>
+                  <div className="flex gap-3 items-center">
+                    <div className="w-16 h-16 rounded-full border-2 border-dashed border-stone-300 bg-stone-50 flex items-center justify-center overflow-hidden shrink-0">
+                      {categoryImagePreview || categoryImage ? (
+                        <img 
+                          src={categoryImagePreview || categoryImage} 
+                          alt="Preview" 
+                          className="w-full h-full object-cover" 
+                        />
+                      ) : (
+                        <ImageIcon size={20} className="text-stone-400" />
+                      )}
+                    </div>
+                    <div className="flex-1 space-y-1.5">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        ref={categoryFileInputRef}
+                        onChange={handleCategoryFileChange}
+                        className="text-xs file:mr-2 file:py-1 file:px-2.5 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-stone-100 file:text-stone-700 hover:file:bg-stone-200 cursor-pointer w-full"
+                      />
+                      <input
+                        type="url"
+                        value={categoryImage}
+                        onChange={e => {
+                          setCategoryImage(e.target.value);
+                          setCategoryImagePreview(e.target.value);
+                        }}
+                        placeholder="O pega una URL de imagen..."
+                        className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-black"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Destacada en Portada */}
+                <div className="pt-2">
+                  <label className="flex items-center gap-2.5 text-xs text-stone-700 font-medium cursor-pointer p-3 bg-stone-50 rounded-xl border border-stone-200/80">
+                    <input
+                      type="checkbox"
+                      checked={categoryFeatured}
+                      onChange={e => setCategoryFeatured(e.target.checked)}
+                      className="w-4 h-4 rounded text-black focus:ring-black border-stone-300"
+                    />
+                    <div>
+                      <span className="font-bold text-gray-900 block flex items-center gap-1">
+                        <Star size={13} className="text-amber-500 fill-amber-500" /> Mostrar destacada en portada
+                      </span>
+                      <span className="text-[11px] text-stone-500">
+                        Aparecerá en el carrusel circular superior de la tienda principal.
+                      </span>
+                    </div>
+                  </label>
+                </div>
+
+                {/* Botón Guardar */}
+                <div className="pt-2">
+                  <button
+                    type="submit"
+                    disabled={savingCategory}
+                    className="w-full bg-black hover:bg-stone-800 text-white font-semibold py-3 px-4 rounded-xl text-xs flex items-center justify-center gap-2 shadow-xs transition disabled:opacity-50"
+                  >
+                    {savingCategory ? (
+                      <span>Guardando Categoría...</span>
+                    ) : (
+                      <>
+                        <Plus size={15} /> {editingCategoryId ? "Actualizar Categoría" : "Guardar Nueva Categoría"}
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            {/* Lista y Reordenamiento de Categorías */}
+            <div className="bg-white p-6 sm:p-8 rounded-2xl shadow-sm border border-stone-200 lg:col-span-7 space-y-4">
+              <div>
+                <h3 className="text-lg font-serif font-medium">Orden de Visualización & Prioridad</h3>
+                <p className="text-xs text-stone-500 mt-0.5">
+                  Organiza las categorías con las flechas ⬆️ / ⬇️. Las primeras se mostrarán al inicio en los filtros y carrusel.
+                </p>
+              </div>
+
+              <div className="bg-amber-50/70 border border-amber-200/80 p-3 rounded-xl text-xs text-amber-900 flex items-start gap-2">
+                <Sparkles size={15} className="text-[#C08261] shrink-0 mt-0.5" />
+                <p className="leading-relaxed text-[11px]">
+                  <strong>Tip de Destacados:</strong> La categoría en la posición <strong>#1</strong> será la primera visible después del botón &quot;TODOS&quot;. Las que tengan la estrella <strong>★</strong> aparecerán en las fotos circulares de la tienda.
+                </p>
+              </div>
+
+              {categories.length === 0 ? (
+                <div className="py-12 text-center text-xs text-stone-400">
+                  Cargando categorías...
+                </div>
+              ) : (
+                <div className="space-y-2.5">
+                  {categories.map((cat, idx) => {
+                    const count = products.filter(p => (p.brand || p.category)?.toLowerCase() === cat.name.toLowerCase()).length;
+                    const isFirst = idx === 0;
+                    const isLast = idx === categories.length - 1;
+
+                    return (
+                      <div 
+                        key={cat.id}
+                        className="flex items-center justify-between p-3.5 bg-stone-50/80 hover:bg-stone-100/60 rounded-xl border border-stone-200/90 transition shadow-2xs gap-3"
+                      >
+                        {/* Posición e Imagen */}
+                        <div className="flex items-center gap-3 min-w-0">
+                          <span className="w-6 h-6 rounded-full bg-stone-200 text-stone-700 text-xs font-bold flex items-center justify-center font-mono shrink-0">
+                            #{idx + 1}
+                          </span>
+                          <div className="w-11 h-11 rounded-full overflow-hidden border border-stone-200 bg-white shrink-0">
+                            <img 
+                              src={cat.image || "https://images.unsplash.com/photo-1599305090598-fe179d501227?q=80&w=400&auto=format&fit=crop"} 
+                              alt={cat.name} 
+                              className="w-full h-full object-cover" 
+                            />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-xs text-gray-900 truncate">{cat.name}</span>
+                              {cat.featured && (
+                                <span className="bg-amber-100 text-amber-800 text-[10px] font-bold px-1.5 py-0.2 rounded-full inline-flex items-center gap-0.5 border border-amber-200">
+                                  <Star size={9} className="fill-amber-600 text-amber-600" /> Destacada
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-[11px] text-stone-500 block">
+                              {count} {count === 1 ? "producto asignado" : "productos asignados"}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Controles de Orden y Acciones */}
+                        <div className="flex items-center gap-1 shrink-0">
+                          {/* Botón Subir Orden */}
+                          <button
+                            type="button"
+                            disabled={isFirst}
+                            onClick={() => handleMoveCategory(idx, "up")}
+                            className="p-1.5 rounded-lg border border-stone-200 bg-white hover:bg-stone-200 text-stone-700 disabled:opacity-30 disabled:cursor-not-allowed transition"
+                            title="Mover hacia arriba (mostrar antes)"
+                          >
+                            <ArrowUp size={15} />
+                          </button>
+
+                          {/* Botón Bajar Orden */}
+                          <button
+                            type="button"
+                            disabled={isLast}
+                            onClick={() => handleMoveCategory(idx, "down")}
+                            className="p-1.5 rounded-lg border border-stone-200 bg-white hover:bg-stone-200 text-stone-700 disabled:opacity-30 disabled:cursor-not-allowed transition"
+                            title="Mover hacia abajo (mostrar después)"
+                          >
+                            <ArrowDown size={15} />
+                          </button>
+
+                          {/* Toggle Destacado */}
+                          <button
+                            type="button"
+                            onClick={() => handleToggleFeaturedCategory(cat)}
+                            className={`p-1.5 rounded-lg border transition ${
+                              cat.featured
+                                ? "bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100"
+                                : "bg-white border-stone-200 text-stone-400 hover:text-stone-700"
+                            }`}
+                            title={cat.featured ? "Quitar de destacadas en portada" : "Destacar en portada"}
+                          >
+                            <Star size={15} className={cat.featured ? "fill-amber-500 text-amber-500" : ""} />
+                          </button>
+
+                          {/* Editar */}
+                          <button
+                            type="button"
+                            onClick={() => handleEditCategory(cat)}
+                            className="p-1.5 rounded-lg border border-stone-200 bg-white hover:bg-stone-100 text-stone-600 hover:text-black transition"
+                            title="Editar Categoría"
+                          >
+                            <Edit2 size={15} />
+                          </button>
+
+                          {/* Eliminar */}
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteCategory(cat.id, cat.name)}
+                            className="p-1.5 rounded-lg border border-stone-200 bg-white hover:bg-red-50 text-stone-400 hover:text-red-600 transition"
+                            title="Eliminar Categoría"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
