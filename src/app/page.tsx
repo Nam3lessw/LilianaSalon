@@ -175,11 +175,23 @@ export default function Home() {
     }
   ];
 
-  const categoriesList = ["TODOS", ...categories.map(c => c.name)];
+  // Combina categorías ordenadas de Firestore y cualquier categoría/marca encontrada en productos
+  const dynamicCategories = Array.from(new Set([
+    ...categories.map(c => c.name),
+    ...products.flatMap(p => [p.brand, p.category, ...(p.categories || [])]).filter(Boolean) as string[]
+  ]));
+
+  const categoriesList = ["TODOS", ...dynamicCategories];
 
   const filteredProducts = selectedCategory === "TODOS"
     ? products
-    : products.filter(p => (p.brand || p.category)?.toLowerCase() === selectedCategory.toLowerCase());
+    : products.filter(p => {
+        const target = selectedCategory.toLowerCase();
+        if ((p.brand || "").toLowerCase() === target) return true;
+        if ((p.category || "").toLowerCase() === target) return true;
+        if (Array.isArray(p.categories) && p.categories.some(c => c.toLowerCase() === target)) return true;
+        return false;
+      });
 
   const getWhatsAppProductLink = (product: Product) => {
     const volumeText = product.volume ? ` (${product.volume})` : "";
@@ -465,6 +477,9 @@ export default function Home() {
                     <div className="flex items-center justify-between gap-1 mb-1">
                       <span className="text-[10px] sm:text-[11px] text-[#A06C52] uppercase tracking-[0.15em] sm:tracking-[0.2em] font-semibold block truncate">
                         {product.brand || product.category}
+                        {Array.isArray(product.categories) && product.categories.filter(c => c.toLowerCase() !== (product.brand || product.category || "").toLowerCase()).length > 0 && (
+                          <span className="text-stone-400 font-normal"> • {product.categories.filter(c => c.toLowerCase() !== (product.brand || product.category || "").toLowerCase()).slice(0, 2).join(", ")}</span>
+                        )}
                       </span>
                     </div>
 
@@ -621,10 +636,15 @@ export default function Home() {
               {/* Información y Precios en Alto */}
               <div className="md:col-span-6 p-5 sm:p-10 flex flex-col justify-between">
                 <div>
-                  <div className="flex items-center gap-2 mb-2 flex-wrap">
+                  <div className="flex items-center gap-1.5 mb-2 flex-wrap">
                     <span className="text-[11px] sm:text-xs uppercase tracking-[0.25em] font-bold text-[#A06C52]">
                       {selectedProduct.brand || selectedProduct.category}
                     </span>
+                    {Array.isArray(selectedProduct.categories) && selectedProduct.categories.filter(c => c.toLowerCase() !== (selectedProduct.brand || selectedProduct.category || "").toLowerCase()).map((cat, idx) => (
+                      <span key={idx} className="text-[10px] sm:text-[11px] font-medium text-stone-600 bg-stone-100 px-2 py-0.5 rounded-full border border-stone-200">
+                        {cat}
+                      </span>
+                    ))}
                     {selectedProduct.volume && (
                       <>
                         <span className="text-stone-300">•</span>

@@ -71,6 +71,7 @@ export interface Product {
   name: string;
   brand: string;
   category: string;
+  categories?: string[];
   price: number;
   priceUSD?: number | null;
   oldPrice: number | null;
@@ -141,6 +142,21 @@ const DEFAULT_CATEGORIES: Omit<CategoryItem, "id">[] = [
   { name: "Tratamientos", image: "https://images.unsplash.com/photo-1527799820374-dcf8d9d4a388?q=80&w=400&auto=format&fit=crop", order: 6, featured: false }
 ];
 
+const BEAUTY_SUBCATEGORIES: string[] = [
+  "Shampoo",
+  "Acondicionador",
+  "Tratamientos",
+  "Mascarillas",
+  "Alisados",
+  "Aceites & Gotas",
+  "Cuidado Facial",
+  "Protector Térmico",
+  "Ampollas",
+  "Matizador",
+  "Accesorios",
+  "Perfumes"
+];
+
 export default function AdminDashboard() {
   const router = useRouter();
 
@@ -186,8 +202,32 @@ export default function AdminDashboard() {
   // Products state
   const [products, setProducts] = useState<Product[]>([]);
   const [name, setName] = useState("");
+  const [brand, setBrand] = useState("Keratech");
+  const [customBrand, setCustomBrand] = useState("");
   const [category, setCategory] = useState("Keratech");
   const [customCategory, setCustomCategory] = useState("");
+  const [selectedCategories, setSelectedCategories] = useState<string[]>(["Keratech"]);
+  const [newSubcategoryInput, setNewSubcategoryInput] = useState("");
+
+  const toggleCategory = (catName: string) => {
+    setSelectedCategories(prev => {
+      if (prev.includes(catName)) {
+        return prev.filter(c => c !== catName);
+      } else {
+        return [...prev, catName];
+      }
+    });
+  };
+
+  const handleAddCustomSubcategory = () => {
+    const trimmed = newSubcategoryInput.trim();
+    if (!trimmed) return;
+    if (!selectedCategories.includes(trimmed)) {
+      setSelectedCategories(prev => [...prev, trimmed]);
+    }
+    setNewSubcategoryInput("");
+  };
+
   const [price, setPrice] = useState("");
   const [oldPrice, setOldPrice] = useState("");
   const [tag, setTag] = useState("");
@@ -995,24 +1035,33 @@ export default function AdminDashboard() {
     setStatusMessage(null);
 
     try {
-      const finalCategory = category === "Otra" ? (customCategory.trim() || "General") : category;
+      const finalBrand = brand === "Otra" ? (customBrand.trim() || "Liliana Salon") : brand;
+      const finalCategoriesList = Array.from(new Set([
+        finalBrand,
+        ...selectedCategories.filter(Boolean)
+      ]));
+      const finalPrimaryCategory = finalCategoriesList[0] || finalBrand;
       const finalImageUrl = await uploadImageIfNeeded();
 
-      // Auto-registrar categoría en Firestore si se creó como personalizada
-      if (db && finalCategory && !categories.some(c => c.name.toLowerCase() === finalCategory.toLowerCase())) {
-        try {
-          const nextOrder = categories.length > 0 ? Math.max(...categories.map(c => c.order || 0)) + 1 : 1;
-          await addDoc(collection(db, "categories"), {
-            name: finalCategory,
-            image: finalImageUrl || "https://images.unsplash.com/photo-1599305090598-fe179d501227?q=80&w=400&auto=format&fit=crop",
-            order: nextOrder,
-            featured: true,
-            createdAt: serverTimestamp()
-          });
-          fetchCategories();
-        } catch (catErr) {
-          console.warn("Could not auto-register category:", catErr);
+      // Auto-registrar categorías nuevas en Firestore si no existen aún
+      if (db) {
+        for (const cat of finalCategoriesList) {
+          if (!categories.some(c => c.name.toLowerCase() === cat.toLowerCase())) {
+            try {
+              const nextOrder = categories.length > 0 ? Math.max(...categories.map(c => c.order || 0)) + 1 : 1;
+              await addDoc(collection(db, "categories"), {
+                name: cat,
+                image: finalImageUrl || "https://images.unsplash.com/photo-1599305090598-fe179d501227?q=80&w=400&auto=format&fit=crop",
+                order: nextOrder,
+                featured: ["Keratech", "IvoGa", "Shampoo", "Tratamientos", "Alisados"].includes(cat),
+                createdAt: serverTimestamp()
+              });
+            } catch (catErr) {
+              console.warn("Could not auto-register category:", cat, catErr);
+            }
+          }
         }
+        fetchCategories();
       }
 
       const parsedPriceQ = parseFloat(price) || 0;
@@ -1022,8 +1071,9 @@ export default function AdminDashboard() {
 
       const productPayload = {
         name: name.trim(),
-        brand: finalCategory,
-        category: finalCategory,
+        brand: finalBrand,
+        category: finalPrimaryCategory,
+        categories: finalCategoriesList,
         price: parsedPriceQ,
         priceUSD: parsedPriceUSD,
         oldPrice: parsedOldPriceQ,
@@ -1140,14 +1190,26 @@ export default function AdminDashboard() {
   const handleEdit = (p: Product) => {
     setEditingId(p.id);
     setName(p.name);
-    const catName = p.brand || p.category || "";
-    if (categories.some(c => c.name.toLowerCase() === catName.toLowerCase())) {
-      setCategory(catName);
-      setCustomCategory("");
+    
+    // Resolve brand
+    const productBrand = p.brand || p.category || "Keratech";
+    if (["Keratech", "IvoGa", "Liliana Salon"].includes(productBrand)) {
+      setBrand(productBrand);
+      setCustomBrand("");
     } else {
-      setCategory("Otra");
-      setCustomCategory(catName);
+      setBrand("Otra");
+      setCustomBrand(productBrand);
     }
+
+    // Resolve categories array
+    const initialCats: string[] = Array.isArray(p.categories) && p.categories.length > 0
+      ? p.categories
+      : Array.from(new Set([p.brand, p.category].filter(Boolean) as string[]));
+    
+    setSelectedCategories(initialCats.length > 0 ? initialCats : [productBrand]);
+    setCategory(p.category || productBrand);
+    setCustomCategory("");
+    
     setPrice(p.price.toString());
     setPriceUSD(p.priceUSD ? p.priceUSD.toString() : (p.price ? convertGTQtoUSD(p.price).toString() : ""));
     setOldPrice(p.oldPrice ? p.oldPrice.toString() : "");
@@ -1165,6 +1227,12 @@ export default function AdminDashboard() {
   const resetForm = () => {
     setEditingId(null);
     setName("");
+    setBrand("Keratech");
+    setCustomBrand("");
+    setCategory("Keratech");
+    setCustomCategory("");
+    setSelectedCategories(["Keratech"]);
+    setNewSubcategoryInput("");
     setPrice("");
     setPriceUSD("");
     setOldPrice("");
@@ -1176,7 +1244,6 @@ export default function AdminDashboard() {
     setStock("10");
     setVolume("");
     setDescription("");
-    setCustomCategory("");
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
@@ -1334,68 +1401,43 @@ export default function AdminDashboard() {
                   />
                 </div>
 
-                {/* Categoría / Marca */}
+                {/* Marca Principal y Stock */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <div className="flex items-center justify-between mb-1.5">
-                      <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                        Categoría / Marca *
-                      </label>
-                      <button
-                        type="button"
-                        onClick={() => setActiveTab("categories")}
-                        className="text-[10px] text-[#C08261] hover:underline font-bold"
-                      >
-                        + Administrar
-                      </button>
-                    </div>
+                    <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1.5">
+                      Marca Principal *
+                    </label>
                     <select 
-                      value={category} 
-                      onChange={e => setCategory(e.target.value)} 
+                      value={brand} 
+                      onChange={e => {
+                        const newBrand = e.target.value;
+                        setBrand(newBrand);
+                        if (newBrand && newBrand !== "Otra") {
+                          setSelectedCategories(prev => prev.includes(newBrand) ? prev : [newBrand, ...prev]);
+                        }
+                      }} 
                       className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-black"
                     >
-                      {(categories.length > 0 ? categories : DEFAULT_CATEGORIES.map((c, i) => ({ id: `default-${i}`, ...c }))).map(c => (
-                        <option key={c.id} value={c.name}>{c.name}</option>
-                      ))}
-                      <option value="Otra">➕ Otra (escribir nueva)...</option>
+                      <option value="Keratech">Keratech</option>
+                      <option value="IvoGa">IvoGa</option>
+                      <option value="Liliana Salon">Liliana Salon</option>
+                      <option value="Otra">➕ Otra marca personalizada...</option>
                     </select>
-                  </div>
-
-                  {category === "Otra" ? (
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1.5">
-                        Nombre de Categoría *
-                      </label>
+                    {brand === "Otra" && (
                       <input 
                         type="text" 
-                        value={customCategory} 
-                        onChange={e => setCustomCategory(e.target.value)} 
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-black" 
-                        placeholder="Ej. Tratamientos" 
+                        value={customBrand} 
+                        onChange={e => setCustomBrand(e.target.value)} 
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-black mt-2" 
+                        placeholder="Escribe la marca..." 
                         required
                       />
-                    </div>
-                  ) : (
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1.5">
-                        Stock (Unidades) *
-                      </label>
-                      <input 
-                        required 
-                        type="number" 
-                        min="0"
-                        value={stock} 
-                        onChange={e => setStock(e.target.value)} 
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-black" 
-                      />
-                    </div>
-                  )}
-                </div>
+                    )}
+                  </div>
 
-                {category === "Otra" && (
                   <div>
                     <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1.5">
-                      Stock (Unidades Disponibles) *
+                      Stock (Unidades) *
                     </label>
                     <input 
                       required 
@@ -1406,7 +1448,86 @@ export default function AdminDashboard() {
                       className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-black" 
                     />
                   </div>
-                )}
+                </div>
+
+                {/* Categorías y Subcategorías (Selección Múltiple) */}
+                <div className="space-y-2.5 p-3.5 bg-stone-50/70 rounded-xl border border-stone-200/80">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <label className="block text-xs font-bold text-gray-800 uppercase tracking-wider">
+                        Categorías & Subcategorías *
+                      </label>
+                      <span className="text-[11px] text-stone-500">
+                        Marca las que apliquen para que las clientas encuentren el producto en múltiples filtros.
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab("categories")}
+                      className="text-[10px] text-[#C08261] hover:underline font-bold shrink-0 ml-2"
+                    >
+                      + Administrar
+                    </button>
+                  </div>
+
+                  {/* Pills Interactivas */}
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {Array.from(new Set([
+                      ...BEAUTY_SUBCATEGORIES,
+                      ...categories.map(c => c.name),
+                      ...selectedCategories
+                    ])).map((cat) => {
+                      const isSelected = selectedCategories.includes(cat);
+                      return (
+                        <button
+                          key={cat}
+                          type="button"
+                          onClick={() => toggleCategory(cat)}
+                          className={`text-xs px-2.5 py-1.5 rounded-full border transition-all flex items-center gap-1.5 cursor-pointer select-none ${
+                            isSelected
+                              ? "bg-[#FAF3EC] text-[#B85728] border-[#C08261] font-bold shadow-2xs ring-1 ring-[#C08261]/20"
+                              : "bg-white text-stone-600 border-stone-200 hover:border-stone-400 hover:text-black"
+                          }`}
+                        >
+                          {isSelected ? (
+                            <Check size={12} className="text-[#B85728] stroke-[3]" />
+                          ) : (
+                            <Plus size={11} className="text-stone-400" />
+                          )}
+                          <span>{cat}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Añadir subcategoría al vuelo */}
+                  <div className="flex gap-2 pt-2 border-t border-stone-200/60">
+                    <input
+                      type="text"
+                      value={newSubcategoryInput}
+                      onChange={e => setNewSubcategoryInput(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          handleAddCustomSubcategory();
+                        }
+                      }}
+                      placeholder="Escribe otra subcategoría (ej. Termoprotector, Ampollas...)"
+                      className="text-xs px-3 py-2 border border-stone-200 rounded-lg flex-1 focus:outline-none focus:ring-1 focus:ring-black bg-white"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddCustomSubcategory}
+                      className="px-3 py-2 bg-stone-200 hover:bg-stone-300 text-stone-800 text-xs font-semibold rounded-lg transition"
+                    >
+                      + Agregar
+                    </button>
+                  </div>
+
+                  <div className="text-[11px] text-stone-500 pt-0.5">
+                    Seleccionadas ({selectedCategories.length}): <span className="font-semibold text-stone-800">{selectedCategories.join(", ") || "Ninguna (marca al menos una)"}</span>
+                  </div>
+                </div>
 
                 {/* Precios Multidivisa (Guatemala 🇬🇹 & El Salvador 🇸🇻) */}
                 <div className="bg-[#FAF9F7] p-4 rounded-xl border border-stone-200 space-y-4">
@@ -1681,9 +1802,19 @@ export default function AdminDashboard() {
                               </div>
                             </td>
                             <td className="py-3 px-2 text-xs text-gray-600">
-                              <span className="bg-stone-100 px-2 py-1 rounded text-stone-700">
-                                {p.brand || p.category}
-                              </span>
+                              <div className="flex flex-wrap gap-1 max-w-[170px]">
+                                {Array.isArray(p.categories) && p.categories.length > 0 ? (
+                                  p.categories.map((cat, i) => (
+                                    <span key={i} className="bg-stone-100 border border-stone-200/90 text-stone-700 text-[10px] px-1.5 py-0.5 rounded font-medium">
+                                      {cat}
+                                    </span>
+                                  ))
+                                ) : (
+                                  <span className="bg-stone-100 px-2 py-1 rounded text-stone-700 text-xs">
+                                    {p.brand || p.category}
+                                  </span>
+                                )}
+                              </div>
                             </td>
                             <td className="py-3 px-2 text-xs">
                               <div className="font-semibold text-gray-900">

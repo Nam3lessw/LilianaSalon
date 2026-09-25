@@ -20,6 +20,7 @@ export const ProductSchema = z.object({
   name: z.string().trim().min(1, "Nombre requerido").max(150),
   brand: z.string().trim().min(1, "Marca requerida").max(100),
   category: z.string().trim().min(1, "Categoría requerida").max(100),
+  categories: z.array(z.string().trim().max(100)).optional().default([]),
   price: z.number().positive("El precio debe ser un número positivo").max(100000),
   priceUSD: z.number().positive().max(100000).nullable().optional(),
   oldPrice: z.number().positive().max(100000).nullable().optional(),
