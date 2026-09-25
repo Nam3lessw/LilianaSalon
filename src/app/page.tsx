@@ -593,10 +593,6 @@ export default function Home() {
                         </span>
                       </>
                     )}
-                    <span className="text-stone-300">•</span>
-                    <span className="text-[11px] font-semibold text-stone-500 flex items-center gap-1">
-                      {countryFlag} {countryName}
-                    </span>
                   </div>
 
                   <h2 className="text-xl sm:text-3xl font-serif text-gray-900 leading-tight mb-4">
@@ -666,12 +662,12 @@ export default function Home() {
                     </span>
                   </div>
 
-                  {/* Beneficio de Mayoreo / Docena */}
-                  <div className="bg-[#FAF3EC] border border-[#E8D6C6] rounded-xl p-2.5 mb-4 text-[11px] text-stone-700 flex items-center gap-2">
-                    <span className="text-base">📦</span>
-                    <span>
-                      <strong className="text-black font-semibold">10% OFF por Docena:</strong> Si llevas 12 o más unidades (o alcanzas 12 artículos en tu bolsa), se aplica el descuento al por mayor automático.
-                    </span>
+                  {/* Beneficio de Docena */}
+                  <div className="bg-[#FAF8F5] border border-stone-200/80 rounded-2xl p-3 mb-4 text-xs text-stone-600 flex items-center gap-2.5">
+                    <Sparkles size={14} className="text-[#C08261] shrink-0" />
+                    <p className="leading-relaxed">
+                      <strong className="text-stone-900 font-semibold">10% OFF por Docena:</strong> Descuento automático a partir de 12 unidades en tu pedido.
+                    </p>
                   </div>
 
                   {/* Detalles / Descripción */}

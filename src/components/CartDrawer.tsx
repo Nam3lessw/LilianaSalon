@@ -425,7 +425,7 @@ export default function CartDrawer() {
               ) : totalItems > 0 && (
                 <div className="bg-[#FAF9F7] border border-stone-200/80 rounded-xl px-3 py-1.5 flex items-center justify-between text-[11px] text-stone-600">
                   <span className="flex items-center gap-1.5">
-                    <span>📦</span>
+                    <Sparkles size={12} className="text-[#C08261]" />
                     <span>Lleva <strong>12+ unidades</strong> para 10% Mayoreo</span>
                   </span>
                   <span className="text-[#A8623D] font-bold text-[10px]">
