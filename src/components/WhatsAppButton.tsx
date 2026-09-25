@@ -87,12 +87,6 @@ export default function WhatsAppButton() {
             : "opacity-0 translate-y-8 scale-90 pointer-events-none"
         }`}
       >
-        {/* Cabecera / Banner descriptivo del menú */}
-        <div className="bg-stone-900/95 backdrop-blur-md text-white text-[11px] font-medium py-1.5 px-3.5 rounded-full shadow-lg border border-stone-800 flex items-center gap-1.5 mb-1 animate-in fade-in duration-200">
-          <Globe size={13} className="text-[#C08261]" />
-          <span>Atención & Moneda</span>
-        </div>
-
         {/* 1. Opción Moneda: El Salvador (USD $) */}
         <div 
           onClick={() => handleSelectCountry("SV")}
@@ -190,7 +184,7 @@ export default function WhatsAppButton() {
             }`}
           >
             <span className="text-sm">{country === "GT" ? "🇬🇹" : "🇸🇻"}</span>
-            <span>WhatsApp & Moneda ({currencySymbol})</span>
+            <span>WhatsApp ({currencySymbol})</span>
           </div>
         )}
 
@@ -204,7 +198,7 @@ export default function WhatsAppButton() {
               ? "bg-stone-900 text-white rotate-90 scale-105" 
               : "bg-[#25D366] hover:bg-[#20ba59] text-white hover:scale-105"
           }`}
-          aria-label={isOpen ? "Cerrar menú de atención" : "Abrir menú de atención y moneda"}
+          aria-label={isOpen ? "Cerrar menú de contacto" : "Abrir menú de contacto"}
           aria-expanded={isOpen}
         >
           {/* Badge de moneda activa cuando está cerrado */}
@@ -213,11 +207,6 @@ export default function WhatsAppButton() {
               <span>{country === "GT" ? "🇬🇹" : "🇸🇻"}</span>
               <span>{currencySymbol}</span>
             </span>
-          )}
-
-          {/* Sutil pulso verde cuando está cerrado */}
-          {!isOpen && (
-            <span className="absolute -inset-1 rounded-full bg-[#25D366] opacity-25 animate-ping pointer-events-none"></span>
           )}
 
           {/* Ícono dinámico */}
