@@ -55,6 +55,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { convertGTQtoUSD, convertUSDtoGTQ, roundToCommercialPrice, DEFAULT_EXCHANGE_RATE } from "@/lib/currency";
+import { compressImage } from "@/lib/image-compress";
 
 export interface CategoryItem {
   id: string;
@@ -399,17 +400,25 @@ export default function AdminDashboard() {
     }
   };
 
-  const handleCategoryFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleCategoryFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      setCategoryImageFile(file);
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const result = reader.result as string;
-        setCategoryImagePreview(result);
-        setCategoryImage(result);
-      };
-      reader.readAsDataURL(file);
+      try {
+        const { dataUrl, blob } = await compressImage(file, 600, 0.82);
+        setCategoryImageFile(new File([blob], file.name.replace(/\.[^/.]+$/, ".jpg"), { type: "image/jpeg" }));
+        setCategoryImagePreview(dataUrl);
+        setCategoryImage(dataUrl);
+      } catch (err) {
+        console.warn("Category image compression error, using raw:", err);
+        setCategoryImageFile(file);
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const result = reader.result as string;
+          setCategoryImagePreview(result);
+          setCategoryImage(result);
+        };
+        reader.readAsDataURL(file);
+      }
     }
   };
 
@@ -417,10 +426,13 @@ export default function AdminDashboard() {
     if (categoryImageFile && storage) {
       try {
         const storageRef = ref(storage, `categories/${Date.now()}_${categoryImageFile.name}`);
-        const snapshot = await uploadBytes(storageRef, categoryImageFile);
-        return await getDownloadURL(snapshot.ref);
+        const uploadPromise = uploadBytes(storageRef, categoryImageFile).then(snapshot => getDownloadURL(snapshot.ref));
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("Storage timeout")), 3500)
+        );
+        return await Promise.race([uploadPromise, timeoutPromise]);
       } catch (err) {
-        console.warn("Category storage fallback:", err);
+        console.warn("Category storage upload skipped or timed out, using optimized image:", err);
         return categoryImagePreview || categoryImage;
       }
     }
@@ -937,17 +949,25 @@ export default function AdminDashboard() {
     }
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      setImageFile(file);
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const result = reader.result as string;
-        setImagePreview(result);
-        setImage(result);
-      };
-      reader.readAsDataURL(file);
+      try {
+        const { dataUrl, blob } = await compressImage(file, 900, 0.82);
+        setImageFile(new File([blob], file.name.replace(/\.[^/.]+$/, ".jpg"), { type: "image/jpeg" }));
+        setImagePreview(dataUrl);
+        setImage(dataUrl);
+      } catch (err) {
+        console.warn("Image compression error, using raw:", err);
+        setImageFile(file);
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const result = reader.result as string;
+          setImagePreview(result);
+          setImage(result);
+        };
+        reader.readAsDataURL(file);
+      }
     }
   };
 
@@ -955,11 +975,14 @@ export default function AdminDashboard() {
     if (imageFile && storage) {
       try {
         const storageRef = ref(storage, `products/${Date.now()}_${imageFile.name}`);
-        const snapshot = await uploadBytes(storageRef, imageFile);
-        const downloadUrl = await getDownloadURL(snapshot.ref);
+        const uploadPromise = uploadBytes(storageRef, imageFile).then(snapshot => getDownloadURL(snapshot.ref));
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("Storage timeout")), 3500)
+        );
+        const downloadUrl = await Promise.race([uploadPromise, timeoutPromise]);
         return downloadUrl;
       } catch (err) {
-        console.warn("Storage fallback to base64", err);
+        console.warn("Storage upload skipped or timed out, using optimized image:", err);
         return imagePreview || image;
       }
     }
@@ -997,7 +1020,7 @@ export default function AdminDashboard() {
       const parsedOldPriceQ = oldPrice ? parseFloat(oldPrice) : null;
       const parsedOldPriceUSD = oldPriceUSD ? parseFloat(oldPriceUSD) : (parsedOldPriceQ ? convertGTQtoUSD(parsedOldPriceQ) : null);
 
-      const productData = {
+      const productPayload = {
         name: name.trim(),
         brand: finalCategory,
         category: finalCategory,
@@ -1010,44 +1033,69 @@ export default function AdminDashboard() {
         stock: parseInt(stock) || 0,
         volume: volume.trim() || "",
         description: description.trim() || "",
-        updatedAt: serverTimestamp()
       };
 
-      const withTimeout = (promise: Promise<any>, ms = 12000) => {
-        return Promise.race([
-          promise,
-          new Promise((_, reject) =>
-            setTimeout(() => reject(new Error("Tiempo de espera agotado al contactar con Firebase.")), ms)
-          )
-        ]);
-      };
+      let saved = false;
 
+      // 1. Intentar primero con el cliente Firestore (con timeout de 4.5 segundos)
       if (db) {
-        if (editingId) {
-          await withTimeout(updateDoc(doc(db, "products", editingId), productData));
-          setStatusMessage({ type: "success", text: "¡Producto actualizado exitosamente en Firebase!" });
-        } else {
-          await withTimeout(addDoc(collection(db, "products"), {
-            ...productData,
-            createdAt: serverTimestamp()
-          }));
-          setStatusMessage({ type: "success", text: "¡Producto guardado exitosamente en Firebase!" });
+        try {
+          const clientPromise = editingId
+            ? updateDoc(doc(db, "products", editingId), { ...productPayload, updatedAt: serverTimestamp() })
+            : addDoc(collection(db, "products"), { ...productPayload, createdAt: serverTimestamp() });
+
+          const timeoutPromise = new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error("Timeout cliente Firestore")), 4500)
+          );
+
+          await Promise.race([clientPromise, timeoutPromise]);
+          saved = true;
+          setStatusMessage({
+            type: "success",
+            text: `¡Producto ${editingId ? "actualizado" : "guardado"} exitosamente en Firebase!`
+          });
+        } catch (clientErr: any) {
+          console.warn("Direct Firestore write timed out or rejected, switching to server API fallback:", clientErr);
         }
-      } else {
-        const localId = Date.now().toString();
-        const updated = editingId 
-          ? products.map(p => p.id === editingId ? { ...productData, id: editingId } : p)
-          : [...products, { ...productData, id: localId }];
-        localStorage.setItem("mockProducts", JSON.stringify(updated));
-        setProducts(updated as any);
-        setStatusMessage({ type: "success", text: "Producto guardado (Modo local)." });
+      }
+
+      // 2. Si el cliente falló o expiró, usar la API de administración del servidor
+      if (!saved) {
+        try {
+          const idToken = await auth?.currentUser?.getIdToken();
+          const res = await fetch("/api/admin/products", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              ...(idToken ? { "Authorization": `Bearer ${idToken}` } : {})
+            },
+            body: JSON.stringify({ ...productPayload, ...(editingId ? { id: editingId } : {}) })
+          });
+
+          if (res.ok) {
+            const data = await res.json();
+            if (data.success) {
+              saved = true;
+              setStatusMessage({
+                type: "success",
+                text: `¡Producto ${editingId ? "actualizado" : "guardado"} exitosamente en Firebase!`
+              });
+            }
+          } else {
+            const errData = await res.json().catch(() => ({}));
+            throw new Error(errData.error || "Error al guardar producto en el servidor.");
+          }
+        } catch (apiErr: any) {
+          console.error("API route product save failed:", apiErr);
+          if (!saved) throw apiErr;
+        }
       }
 
       resetForm();
-      fetchProducts();
+      await fetchProducts();
     } catch (e: any) {
       console.error("Error saving product:", e);
-      setStatusMessage({ type: "error", text: "Error al guardar: " + e.message });
+      setStatusMessage({ type: "error", text: "Error al guardar producto: " + (e.message || "Por favor verifica los datos.") });
     } finally {
       setSaving(false);
     }
@@ -1056,15 +1104,33 @@ export default function AdminDashboard() {
   const handleDelete = async (id: string) => {
     if (!confirm("¿Estás seguro de que deseas eliminar este producto?")) return;
     try {
+      let deleted = false;
       if (db) {
-        await deleteDoc(doc(db, "products", id));
-        setStatusMessage({ type: "success", text: "Producto eliminado de Firebase." });
-      } else {
-        const updated = products.filter(p => p.id !== id);
-        localStorage.setItem("mockProducts", JSON.stringify(updated));
-        setProducts(updated);
+        try {
+          const clientPromise = deleteDoc(doc(db, "products", id));
+          const timeoutPromise = new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error("Timeout delete")), 4000)
+          );
+          await Promise.race([clientPromise, timeoutPromise]);
+          deleted = true;
+        } catch (clientErr) {
+          console.warn("Client deleteDoc timed out, using server API fallback:", clientErr);
+        }
       }
-      fetchProducts();
+
+      if (!deleted) {
+        const idToken = await auth?.currentUser?.getIdToken();
+        const res = await fetch(`/api/admin/products?id=${encodeURIComponent(id)}`, {
+          method: "DELETE",
+          headers: {
+            ...(idToken ? { "Authorization": `Bearer ${idToken}` } : {})
+          }
+        });
+        if (res.ok) deleted = true;
+      }
+
+      setStatusMessage({ type: "success", text: "Producto eliminado exitosamente de Firebase." });
+      await fetchProducts();
     } catch (e: any) {
       console.error("Error deleting", e);
       setStatusMessage({ type: "error", text: "Error al eliminar: " + e.message });
@@ -1074,12 +1140,13 @@ export default function AdminDashboard() {
   const handleEdit = (p: Product) => {
     setEditingId(p.id);
     setName(p.name);
-    if (["Keratech", "IvoGa", "Cuidado Facial", "Accesorios", "Perfumes"].includes(p.brand || p.category)) {
-      setCategory(p.brand || p.category);
+    const catName = p.brand || p.category || "";
+    if (categories.some(c => c.name.toLowerCase() === catName.toLowerCase())) {
+      setCategory(catName);
       setCustomCategory("");
     } else {
       setCategory("Otra");
-      setCustomCategory(p.brand || p.category || "");
+      setCustomCategory(catName);
     }
     setPrice(p.price.toString());
     setPriceUSD(p.priceUSD ? p.priceUSD.toString() : (p.price ? convertGTQtoUSD(p.price).toString() : ""));
