@@ -147,7 +147,10 @@ export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState<"products" | "orders" | "loyalty" | "categories">("products");
 
   // Categories & Priority Management state
-  const [categories, setCategories] = useState<CategoryItem[]>([]);
+  const [categories, setCategories] = useState<CategoryItem[]>(() =>
+    DEFAULT_CATEGORIES.map((c, i) => ({ id: `default-${i}`, ...c }))
+  );
+  const [loadingCategories, setLoadingCategories] = useState(false);
   const [categoryName, setCategoryName] = useState("");
   const [categoryImage, setCategoryImage] = useState("");
   const [categoryFeatured, setCategoryFeatured] = useState(true);
@@ -316,29 +319,83 @@ export default function AdminDashboard() {
   };
 
   const fetchCategories = async () => {
+    setLoadingCategories(true);
     try {
+      let loaded = false;
       if (db) {
-        const querySnapshot = await getDocs(collection(db, "categories"));
-        if (querySnapshot.empty) {
-          // Inicializar categorías por defecto si no existen aún en Firestore
-          const seeded: CategoryItem[] = [];
-          for (const cat of DEFAULT_CATEGORIES) {
-            const docRef = await addDoc(collection(db, "categories"), {
-              ...cat,
-              createdAt: serverTimestamp()
-            });
-            seeded.push({ id: docRef.id, ...cat });
+        try {
+          const querySnapshot = await getDocs(collection(db, "categories"));
+          if (!querySnapshot.empty) {
+            const list = querySnapshot.docs.map(d => ({ id: d.id, ...d.data() } as CategoryItem));
+            list.sort((a, b) => (a.order || 0) - (b.order || 0));
+            setCategories(list);
+            loaded = true;
           }
-          seeded.sort((a, b) => a.order - b.order);
-          setCategories(seeded);
-        } else {
-          const list = querySnapshot.docs.map(d => ({ id: d.id, ...d.data() } as CategoryItem));
-          list.sort((a, b) => (a.order || 0) - (b.order || 0));
-          setCategories(list);
+        } catch (clientErr) {
+          console.warn("Client Firestore getDocs for categories error, falling back to API:", clientErr);
+        }
+      }
+
+      if (!loaded) {
+        // Fallback a API route
+        const res = await fetch("/api/categories");
+        if (res.ok) {
+          const data = await res.json();
+          if (data.categories && data.categories.length > 0) {
+            setCategories(data.categories);
+            loaded = true;
+          }
         }
       }
     } catch (e: any) {
       console.error("Error fetching categories", e);
+    } finally {
+      setLoadingCategories(false);
+    }
+  };
+
+  const handleRestoreDefaultCategories = async () => {
+    if (!confirm("¿Deseas sincronizar o inicializar las categorías base de la tienda?")) return;
+    setLoadingCategories(true);
+    setStatusMessage(null);
+
+    try {
+      const idToken = await auth?.currentUser?.getIdToken();
+      const res = await fetch("/api/categories", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(idToken ? { "Authorization": `Bearer ${idToken}` } : {})
+        },
+        body: JSON.stringify({ action: "seed" })
+      });
+
+      if (res.ok) {
+        await fetchCategories();
+        setStatusMessage({ type: "success", text: "¡Categorías base sincronizadas exitosamente!" });
+        return;
+      }
+
+      // Si la API no respondió ok, intentar con cliente Firestore
+      if (db) {
+        const querySnapshot = await getDocs(collection(db, "categories"));
+        const existingNames = new Set(querySnapshot.docs.map(d => d.data().name?.toLowerCase()));
+        for (const cat of DEFAULT_CATEGORIES) {
+          if (!existingNames.has(cat.name.toLowerCase())) {
+            await addDoc(collection(db, "categories"), {
+              ...cat,
+              createdAt: serverTimestamp()
+            });
+          }
+        }
+        await fetchCategories();
+        setStatusMessage({ type: "success", text: "¡Categorías sincronizadas exitosamente!" });
+      }
+    } catch (err: any) {
+      console.error("Error restoring categories:", err);
+      setStatusMessage({ type: "error", text: "Error al sincronizar categorías: " + err.message });
+    } finally {
+      setLoadingCategories(false);
     }
   };
 
@@ -1230,7 +1287,7 @@ export default function AdminDashboard() {
                       onChange={e => setCategory(e.target.value)} 
                       className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-black"
                     >
-                      {categories.map(c => (
+                      {(categories.length > 0 ? categories : DEFAULT_CATEGORIES.map((c, i) => ({ id: `default-${i}`, ...c }))).map(c => (
                         <option key={c.id} value={c.name}>{c.name}</option>
                       ))}
                       <option value="Otra">➕ Otra (escribir nueva)...</option>
@@ -2364,11 +2421,35 @@ export default function AdminDashboard() {
 
             {/* Lista y Reordenamiento de Categorías */}
             <div className="bg-white p-6 sm:p-8 rounded-2xl shadow-sm border border-stone-200 lg:col-span-7 space-y-4">
-              <div>
-                <h3 className="text-lg font-serif font-medium">Orden de Visualización & Prioridad</h3>
-                <p className="text-xs text-stone-500 mt-0.5">
-                  Organiza las categorías con las flechas ⬆️ / ⬇️. Las primeras se mostrarán al inicio en los filtros y carrusel.
-                </p>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-stone-100 pb-3">
+                <div>
+                  <h3 className="text-lg font-serif font-medium">Orden de Visualización & Prioridad</h3>
+                  <p className="text-xs text-stone-500 mt-0.5">
+                    Organiza las categorías con las flechas ⬆️ / ⬇️. Las primeras se mostrarán al inicio en los filtros y carrusel.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={fetchCategories}
+                    disabled={loadingCategories}
+                    className="p-2 rounded-lg border border-stone-200 hover:bg-stone-50 text-stone-600 text-xs flex items-center gap-1.5 transition"
+                    title="Recargar desde la base de datos"
+                  >
+                    <RotateCcw size={13} className={loadingCategories ? "animate-spin" : ""} />
+                    <span>Recargar</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleRestoreDefaultCategories}
+                    disabled={loadingCategories}
+                    className="px-2.5 py-2 rounded-lg border border-amber-200 bg-amber-50 hover:bg-amber-100 text-amber-800 text-[11px] font-medium flex items-center gap-1.5 transition"
+                    title="Restaurar o sincronizar categorías iniciales"
+                  >
+                    <Sparkles size={13} className="text-amber-600" />
+                    <span>Sincronizar Base</span>
+                  </button>
+                </div>
               </div>
 
               <div className="bg-amber-50/70 border border-amber-200/80 p-3 rounded-xl text-xs text-amber-900 flex items-start gap-2">
@@ -2378,9 +2459,21 @@ export default function AdminDashboard() {
                 </p>
               </div>
 
-              {categories.length === 0 ? (
-                <div className="py-12 text-center text-xs text-stone-400">
-                  Cargando categorías...
+              {loadingCategories && categories.length === 0 ? (
+                <div className="py-12 text-center text-xs text-stone-400 flex flex-col items-center justify-center gap-2">
+                  <div className="w-5 h-5 border-2 border-[#C08261] border-t-transparent rounded-full animate-spin"></div>
+                  <span>Cargando categorías de la base de datos...</span>
+                </div>
+              ) : categories.length === 0 ? (
+                <div className="py-12 text-center text-xs text-stone-500 bg-stone-50 rounded-xl border border-dashed border-stone-200 p-6 space-y-3">
+                  <p>No se encontraron categorías en la base de datos.</p>
+                  <button
+                    type="button"
+                    onClick={handleRestoreDefaultCategories}
+                    className="px-4 py-2 bg-black text-white text-[11px] font-bold rounded-lg uppercase tracking-wider hover:bg-stone-800 transition"
+                  >
+                    Inicializar Categorías Base
+                  </button>
                 </div>
               ) : (
                 <div className="space-y-2.5">

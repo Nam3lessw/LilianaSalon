@@ -80,12 +80,27 @@ export default function Home() {
     };
     const fetchCategories = async () => {
       try {
+        let loaded = false;
         if (db) {
-          const snap = await getDocs(collection(db, "categories"));
-          if (!snap.empty) {
-            const list = snap.docs.map(d => ({ id: d.id, ...d.data() } as CategoryItem));
-            list.sort((a, b) => (a.order || 0) - (b.order || 0));
-            setCategories(list);
+          try {
+            const snap = await getDocs(collection(db, "categories"));
+            if (!snap.empty) {
+              const list = snap.docs.map(d => ({ id: d.id, ...d.data() } as CategoryItem));
+              list.sort((a, b) => (a.order || 0) - (b.order || 0));
+              setCategories(list);
+              loaded = true;
+            }
+          } catch (clientErr) {
+            console.warn("Client getDocs for categories error:", clientErr);
+          }
+        }
+        if (!loaded) {
+          const res = await fetch("/api/categories");
+          if (res.ok) {
+            const data = await res.json();
+            if (data.categories && data.categories.length > 0) {
+              setCategories(data.categories);
+            }
           }
         }
       } catch (err) {
